@@ -14,19 +14,25 @@ DIR="$HOME/.zen-claude"
 START="$DIR/start.sh"
 LOG="$DIR/proxy.log"
 MARK="$DIR/.zen-base-url"
+STATE="$DIR/.state"
 VERSION="1.1.0"
+MODE_EXPLICIT=0
+FROM_STATE=0
 
 usage() {
   cat <<'EOF'
 Usage: claude-omni [-m <model>] [--go|--zen|--openrouter] [--status|--list] [-- claude args...]
 
-  -m <model>      Model to use (default depends on provider)
+  -m <model>      Model to use (default: last used, else the provider default)
   --go            Use OpenCode Go models (subscription endpoint)
   --zen           Use OpenCode Zen models (default; free + pay-per-credit)
   --openrouter    Use OpenRouter models (the :free lineup)
   --status        Probe every model and show which are live
   --list          List the model ids for the current provider
+  --doctor        Check prerequisites, key, proxy, and a model probe
   --update        Git-pull the repo and re-run install.sh
+  --reset         Forget the remembered provider/model
+  --uninstall     Remove ~/.zen-claude and the launcher
   --version       Print the version
   -h, --help      Show this help
 
@@ -61,6 +67,20 @@ default_model() {
 
 proxy_up() {
   curl -sf --max-time 2 "$HEALTH" >/dev/null 2>&1
+}
+
+# Remember the last provider/model so a bare `claude-omni` resumes it.
+load_state() {
+  [ -f "$STATE" ] || return 0
+  local m mm
+  m="$(grep '^MODE=' "$STATE" | cut -d= -f2- || true)"
+  case "$m" in zen|go|openrouter) MODE="$m" ;; esac
+  mm="$(grep '^MODEL=' "$STATE" | cut -d= -f2- || true)"
+  if [ -n "$mm" ]; then MODEL="$mm"; FROM_STATE=1; fi
+}
+
+save_state() {
+  printf 'MODE=%s\nMODEL=%s\n' "$MODE" "$MODEL" > "$STATE"
 }
 
 start_proxy() {
@@ -202,12 +222,20 @@ resolve_model() {
     fi
   done
 
-  echo "error: no model is responding right now. Try again later." >&2
+  echo "error: no model is responding right now." >&2
+  echo "       Free lineups rotate and rate-limit often. Try:" >&2
+  echo "         claude-omni --openrouter   # a different free lineup" >&2
+  echo "         claude-omni --go           # your Go subscription" >&2
+  echo "         claude-omni --status       # see responding/rate-limited/dead" >&2
   exit 1
 }
 
 status() {
-  proxy_up && echo "proxy: UP (http://127.0.0.1:${PORT})" || echo "proxy: DOWN"
+  local endpt
+  endpt="$(cat "$MARK" 2>/dev/null || true)"
+  if proxy_up; then echo "proxy: UP (http://127.0.0.1:${PORT})"; else echo "proxy: DOWN"; fi
+  echo "active provider: $MODE ($(api_base))"
+  [ -n "$endpt" ] && echo "running proxy on: $endpt"
   echo ""
   case "$MODE" in
     go)         echo "Go models (subscription):" ;;
@@ -240,33 +268,93 @@ update() {
   echo "done. Run claude-omni to start."
 }
 
+doctor() {
+  local bad=0 m st
+  echo "claude-omni $VERSION — doctor"
+  echo ""
+
+  if command -v node >/dev/null 2>&1; then
+    printf '  \033[32mok\033[0m   node %s\n' "$(node -v 2>/dev/null)"
+  else
+    printf '  \033[31mfail\033[0m node not found (need v18+)\n'; bad=$((bad+1))
+  fi
+  if command -v python3 >/dev/null 2>&1; then
+    printf '  \033[32mok\033[0m   python3\n'
+  else
+    printf '  \033[31mfail\033[0m python3 not found\n'; bad=$((bad+1))
+  fi
+  if command -v claude >/dev/null 2>&1; then
+    printf '  \033[32mok\033[0m   claude (%s)\n' "$(command -v claude)"
+  else
+    printf '  \033[31mfail\033[0m claude not found on PATH\n'; bad=$((bad+1))
+  fi
+
+  if [ -f "$DIR/.env" ] && [ -n "$(key)" ]; then
+    printf '  \033[32mok\033[0m   API key set (%s)\n' "$MODE"
+  else
+    printf '  \033[31mfail\033[0m API key missing for %s (run install.sh)\n' "$MODE"; bad=$((bad+1))
+  fi
+
+  if proxy_up; then
+    printf '  \033[32mok\033[0m   proxy up (http://127.0.0.1:%s)\n' "$PORT"
+  else
+    printf '  \033[33mwarn\033[0m proxy down (starts on launch)\n'
+  fi
+
+  if [ -n "$(key)" ]; then
+    m="$(default_model)"
+    printf '  probe %s: ' "$m"
+    st="$(probe_model "$m")"
+    case "$st" in
+      ok)      printf '\033[32mresponding\033[0m\n' ;;
+      limited) printf '\033[33mrate-limited\033[0m\n' ;;
+      *)       printf '\033[31mdead\033[0m\n'; bad=$((bad+1)) ;;
+    esac
+  fi
+
+  echo ""
+  if [ "$bad" -eq 0 ]; then
+    echo "all good — run claude-omni"
+  else
+    echo "$bad issue(s) found"
+  fi
+}
+
+load_state
+
 while [ $# -gt 0 ]; do
   case "$1" in
     -m)       MODEL="$2"; MODEL_EXPLICIT=1; shift 2 ;;
     -m=*)     MODEL="${1#-m=}"; MODEL_EXPLICIT=1; shift ;;
-    --go)     MODE="go"; shift ;;
-    --zen)    MODE="zen"; shift ;;
-    --openrouter) MODE="openrouter"; shift ;;
+    --go)     MODE="go"; MODE_EXPLICIT=1; shift ;;
+    --zen)    MODE="zen"; MODE_EXPLICIT=1; shift ;;
+    --openrouter) MODE="openrouter"; MODE_EXPLICIT=1; shift ;;
     --status) status; exit 0 ;;
     --list)   catalog | sed 's/^/  /'; exit 0 ;;
-    --version) echo "claude-omni $VERSION"; exit 0 ;;
+    --doctor) doctor; exit 0 ;;
     --update) update; exit 0 ;;
+    --reset)  rm -f "$STATE"; echo "forgot saved provider/model"; exit 0 ;;
+    --uninstall) rm -rf "$DIR" "$HOME/.local/bin/claude-omni"; echo "claude-omni uninstalled"; exit 0 ;;
+    --version) echo "claude-omni $VERSION"; exit 0 ;;
     -h|--help) usage; exit 0 ;;
     --)       shift; break ;;
     *)        break ;;
   esac
 done
 
-# Apply the provider-specific default model when nothing is pinned explicitly
-# or via env (e.g. Go and OpenRouter defaults differ from the Zen free default).
+# Reconcile the model: an explicit -m wins; otherwise use the saved state if the
+# provider wasn't switched, else the provider's default.
 if [ "$MODEL_EXPLICIT" = 0 ] && [ -z "${DEFAULT_ZEN_MODEL:-}" ]; then
-  MODEL="$(default_model)"
+  if [ "$MODE_EXPLICIT" = 1 ] || [ "$FROM_STATE" = 0 ]; then
+    MODEL="$(default_model)"
+  fi
 fi
 
 [ -f "$DIR/.env" ] || { echo "error: $DIR/.env not found -- run install.sh" >&2; exit 1; }
 
 start_proxy
 resolve_model
+save_state
 
 export ANTHROPIC_BASE_URL="http://127.0.0.1:${PORT}"
 export ANTHROPIC_AUTH_TOKEN="zen-local-proxy"

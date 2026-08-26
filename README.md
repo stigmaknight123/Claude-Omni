@@ -55,14 +55,20 @@ under WSL only.
 ## Usage
 
 ```bash
-claude-omni                          # interactive, default provider/model
+claude-omni                          # interactive; resumes your last provider/model
 claude-omni -m hy3-free              # pick a specific model
 claude-omni -p "explain this bug"    # one-shot, no TUI
 claude-omni --status                 # probe every model: responding / rate-limited / dead
 claude-omni --list                   # just the model ids for the current provider
+claude-omni --doctor                 # check node/python3/claude, key, proxy, model
 claude-omni --update                 # git-pull and re-run install.sh
+claude-omni --reset                  # forget the remembered provider/model
+claude-omni --uninstall              # remove ~/.zen-claude and the launcher
 claude-omni --version                # print the version
 ```
+
+A bare `claude-omni` remembers the last provider and model you used (stored in
+`~/.zen-claude/.state`); use `--reset` to clear it.
 
 ### Providers
 
