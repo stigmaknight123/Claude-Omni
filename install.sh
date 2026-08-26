@@ -50,17 +50,45 @@ case "$KEY" in
 esac
 [ "${#KEY}" -ge 32 ] || die "that key looks too short to be real"
 
+# Optional OpenRouter key (only needed for `claude-zen --openrouter`).
+ORKEY="${OPENROUTER_API_KEY:-}"
+if [ -z "$ORKEY" ] && [ -f "$DIR/.env" ]; then
+  ORKEY="$(grep '^OPENROUTER_API_KEY=' "$DIR/.env" | cut -d= -f2- || true)"
+  [ -n "$ORKEY" ] && say "using the OpenRouter key already in $DIR/.env"
+fi
+if [ -z "$ORKEY" ]; then
+  echo ""
+  say "Optional: an OpenRouter key (https://openrouter.ai) enables --openrouter."
+  printf '  OpenRouter API key (Enter to skip): '
+  read -r ORKEY || true
+fi
+if [ -n "$ORKEY" ]; then
+  case "$ORKEY" in
+    sk-*) ;;
+    *) die "that doesn't look like an OpenRouter key (should start with sk-)" ;;
+  esac
+fi
+
 # ---- write files ---------------------------------------------------------
 mkdir -p "$DIR" "$BIN"
 
-printf 'ZEN_API_KEY=%s\n' "$KEY" > "$DIR/.env"
+# Preserve a custom ZEN_BASE_URL across re-installs.
+BASE="$(grep '^ZEN_BASE_URL=' "$DIR/.env" 2>/dev/null | cut -d= -f2- || true)"
+
+{
+  printf 'ZEN_API_KEY=%s\n' "$KEY"
+  [ -n "$ORKEY" ] && printf 'OPENROUTER_API_KEY=%s\n' "$ORKEY"
+  [ -n "$BASE" ] && printf 'ZEN_BASE_URL=%s\n' "$BASE"
+} > "$DIR/.env"
 chmod 600 "$DIR/.env"
 ok "wrote $DIR/.env (chmod 600)"
 
 install -m 644 "$SRC/zen-proxy.mjs" "$DIR/zen-proxy.mjs"
 install -m 755 "$SRC/start.sh"      "$DIR/start.sh"
 install -m 755 "$SRC/bin/claude-zen" "$BIN/claude-zen"
-ok "installed proxy + launcher"
+install -m 644 "$SRC/completions/claude-zen.bash" "$DIR/claude-zen.bash"
+printf '%s\n' "$SRC" > "$DIR/.repo-path"
+ok "installed proxy + launcher + completion"
 
 # ---- PATH ----------------------------------------------------------------
 case ":$PATH:" in

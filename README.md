@@ -58,7 +58,10 @@ under WSL only.
 claude-zen                          # interactive, default provider/model
 claude-zen -m hy3-free              # pick a specific model
 claude-zen -p "explain this bug"    # one-shot, no TUI
-claude-zen --status                 # proxy state + live model list
+claude-zen --status                 # probe every model: responding / rate-limited / dead
+claude-zen --list                   # just the model ids for the current provider
+claude-zen --update                 # git-pull and re-run install.sh
+claude-zen --version                # print the version
 ```
 
 ### Providers
@@ -94,6 +97,18 @@ Anything after those flags is passed straight through to `claude`, so
 
 **The `/model` picker won't list these models.** Switching means quitting and
 relaunching with a different `-m`. That's a Claude Code limitation.
+
+### Shell completion
+
+`install.sh` drops a bash completion into `~/.zen-claude/claude-zen.bash`. Enable
+it with:
+
+```bash
+source ~/.zen-claude/claude-zen.bash
+```
+
+(or add that line to `~/.bashrc`). Then `claude-zen <TAB>` completes the flags,
+and `claude-zen -m <TAB>` completes the model ids.
 
 ---
 

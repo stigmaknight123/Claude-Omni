@@ -14,16 +14,20 @@ DIR="$HOME/.zen-claude"
 START="$DIR/start.sh"
 LOG="$DIR/proxy.log"
 MARK="$DIR/.zen-base-url"
+VERSION="1.1.0"
 
 usage() {
   cat <<'EOF'
-Usage: claude-zen [-m <model>] [--go|--zen|--openrouter] [--status] [-- claude args...]
+Usage: claude-zen [-m <model>] [--go|--zen|--openrouter] [--status|--list] [-- claude args...]
 
   -m <model>      Model to use (default depends on provider)
   --go            Use OpenCode Go models (subscription endpoint)
   --zen           Use OpenCode Zen models (default; free + pay-per-credit)
   --openrouter    Use OpenRouter models (the :free lineup)
-  --status        Print proxy status, the catalog, and probe the model
+  --status        Probe every model and show which are live
+  --list          List the model ids for the current provider
+  --update        Git-pull the repo and re-run install.sh
+  --version       Print the version
   -h, --help      Show this help
 
 Everything else is forwarded to the real `claude`.
@@ -89,6 +93,22 @@ model_alive() {
     -H "Authorization: Bearer $(key)" -H 'content-type: application/json' \
     -d "{\"model\":\"$1\",\"max_tokens\":600,\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}" \
     2>/dev/null | grep -q '"choices"'
+}
+
+# One cheap probe; echoes ok | limited | dead for a single model.
+probe_model() {
+  local body
+  body="$(curl -s --max-time 25 "$(api_base)/chat/completions" \
+    -H "Authorization: Bearer $(key)" -H 'content-type: application/json' \
+    -d "{\"model\":\"$1\",\"max_tokens\":16,\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}" \
+    2>/dev/null)"
+  if printf '%s' "$body" | grep -q '"choices"'; then
+    echo ok
+  elif printf '%s' "$body" | grep -qiE 'FreeUsageLimitError|rate limit|free usage|Insufficient balance|CreditsError|quota'; then
+    echo limited
+  else
+    echo dead
+  fi
 }
 
 # Catalog for the current mode: Zen mode lists the -free lineup, Go mode lists
@@ -187,10 +207,6 @@ resolve_model() {
 }
 
 status() {
-  local probe="$MODEL"
-  if [ "$MODEL_EXPLICIT" = 0 ] && [ -z "${DEFAULT_ZEN_MODEL:-}" ]; then
-    probe="$(default_model)"
-  fi
   proxy_up && echo "proxy: UP (http://127.0.0.1:${PORT})" || echo "proxy: DOWN"
   echo ""
   case "$MODE" in
@@ -198,10 +214,30 @@ status() {
     openrouter) echo "OpenRouter free models:" ;;
     *)          echo "Free models in the Zen catalog:" ;;
   esac
-  catalog | sed 's/^/  - /' || echo "  (catalog fetch failed)"
-  echo ""
-  printf "Probing '%s': " "$probe"
-  model_alive "$probe" && echo "responding" || echo "NOT responding"
+  local m st
+  for m in $(ordered_catalog); do
+    st="$(probe_model "$m")"
+    case "$st" in
+      ok)      printf '  \033[32mresponding\033[0m    %s\n' "$m" ;;
+      limited) printf '  \033[33mrate-limited\033[0m  %s\n' "$m" ;;
+      *)       printf '  \033[31mdead\033[0m          %s\n' "$m" ;;
+    esac
+  done
+}
+
+update() {
+  local src pid
+  src="$(cat "$DIR/.repo-path" 2>/dev/null || true)"
+  [ -n "$src" ] && [ -d "$src/.git" ] || {
+    echo "error: can't find the repo (was it moved?). Re-clone and re-run install.sh." >&2
+    exit 1
+  }
+  echo "updating claude-zen from $src ..."
+  ( cd "$src" && git pull --ff-only origin main ) || { echo "error: git pull failed" >&2; exit 1; }
+  ( cd "$src" && ./install.sh ) || { echo "error: install.sh failed" >&2; exit 1; }
+  pid="$(lsof -ti tcp:"$PORT" 2>/dev/null || true)"
+  if [ -n "$pid" ]; then kill "$pid" 2>/dev/null; echo "stopped the proxy; it restarts on the next launch."; fi
+  echo "done. Run claude-zen to start."
 }
 
 while [ $# -gt 0 ]; do
@@ -212,6 +248,9 @@ while [ $# -gt 0 ]; do
     --zen)    MODE="zen"; shift ;;
     --openrouter) MODE="openrouter"; shift ;;
     --status) status; exit 0 ;;
+    --list)   catalog | sed 's/^/  /'; exit 0 ;;
+    --version) echo "claude-zen $VERSION"; exit 0 ;;
+    --update) update; exit 0 ;;
     -h|--help) usage; exit 0 ;;
     --)       shift; break ;;
     *)        break ;;
