@@ -18,7 +18,7 @@ VERSION="1.1.0"
 
 usage() {
   cat <<'EOF'
-Usage: claude-zen [-m <model>] [--go|--zen|--openrouter] [--status|--list] [-- claude args...]
+Usage: claude-omni [-m <model>] [--go|--zen|--openrouter] [--status|--list] [-- claude args...]
 
   -m <model>      Model to use (default depends on provider)
   --go            Use OpenCode Go models (subscription endpoint)
@@ -232,12 +232,12 @@ update() {
     echo "error: can't find the repo (was it moved?). Re-clone and re-run install.sh." >&2
     exit 1
   }
-  echo "updating claude-zen from $src ..."
+  echo "updating claude-omni from $src ..."
   ( cd "$src" && git pull --ff-only origin main ) || { echo "error: git pull failed" >&2; exit 1; }
   ( cd "$src" && ./install.sh ) || { echo "error: install.sh failed" >&2; exit 1; }
   pid="$(lsof -ti tcp:"$PORT" 2>/dev/null || true)"
   if [ -n "$pid" ]; then kill "$pid" 2>/dev/null; echo "stopped the proxy; it restarts on the next launch."; fi
-  echo "done. Run claude-zen to start."
+  echo "done. Run claude-omni to start."
 }
 
 while [ $# -gt 0 ]; do
@@ -249,7 +249,7 @@ while [ $# -gt 0 ]; do
     --openrouter) MODE="openrouter"; shift ;;
     --status) status; exit 0 ;;
     --list)   catalog | sed 's/^/  /'; exit 0 ;;
-    --version) echo "claude-zen $VERSION"; exit 0 ;;
+    --version) echo "claude-omni $VERSION"; exit 0 ;;
     --update) update; exit 0 ;;
     -h|--help) usage; exit 0 ;;
     --)       shift; break ;;

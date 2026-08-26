@@ -12,7 +12,7 @@ ok()   { printf '  \033[32mok\033[0m   %s\n' "$1"; }
 die()  { printf '  \033[31mfail\033[0m %s\n' "$1" >&2; exit 1; }
 
 echo ""
-echo "Installing claude-zen"
+echo "Installing claude-omni"
 echo ""
 
 # ---- prerequisites -------------------------------------------------------
@@ -50,7 +50,7 @@ case "$KEY" in
 esac
 [ "${#KEY}" -ge 32 ] || die "that key looks too short to be real"
 
-# Optional OpenRouter key (only needed for `claude-zen --openrouter`).
+# Optional OpenRouter key (only needed for `claude-omni --openrouter`).
 ORKEY="${OPENROUTER_API_KEY:-}"
 if [ -z "$ORKEY" ] && [ -f "$DIR/.env" ]; then
   ORKEY="$(grep '^OPENROUTER_API_KEY=' "$DIR/.env" | cut -d= -f2- || true)"
@@ -85,8 +85,8 @@ ok "wrote $DIR/.env (chmod 600)"
 
 install -m 644 "$SRC/zen-proxy.mjs" "$DIR/zen-proxy.mjs"
 install -m 755 "$SRC/start.sh"      "$DIR/start.sh"
-install -m 755 "$SRC/bin/claude-zen" "$BIN/claude-zen"
-install -m 644 "$SRC/completions/claude-zen.bash" "$DIR/claude-zen.bash"
+install -m 755 "$SRC/bin/claude-omni" "$BIN/claude-omni"
+install -m 644 "$SRC/completions/claude-omni.bash" "$DIR/claude-omni.bash"
 printf '%s\n' "$SRC" > "$DIR/.repo-path"
 ok "installed proxy + launcher + completion"
 
@@ -104,14 +104,14 @@ SETTINGS="$HOME/.claude/settings.json"
 if [ -f "$SETTINGS" ] && grep -q 'ANTHROPIC_.*MODEL' "$SETTINGS" 2>/dev/null; then
   echo ""
   say "note ~/.claude/settings.json pins ANTHROPIC_*_MODEL values."
-  say "     Those override environment variables, so claude-zen passes the"
+  say "     Those override environment variables, so claude-omni passes the"
   say "     model as a CLI flag to beat them. Nothing to fix -- just so you"
-  say "     know why plain \`claude\` and \`claude-zen\` behave differently."
+  say "     know why plain \`claude\` and \`claude-omni\` behave differently."
 fi
 
 echo ""
 echo "Done. Next:"
 echo ""
 echo "    ./verify.sh        # prove it works"
-echo "    claude-zen         # start coding"
+echo "    claude-omni         # start coding"
 echo ""

@@ -21,7 +21,7 @@ KEY="$(grep '^ZEN_API_KEY=' "$DIR/.env" 2>/dev/null | cut -d= -f2- || true)"
 [ -n "$KEY" ] || { echo "no key in $DIR/.env -- run install.sh first"; exit 1; }
 
 echo ""
-echo "Verifying claude-zen"
+echo "Verifying claude-omni"
 echo ""
 
 # ---- a: proxy health -----------------------------------------------------
@@ -114,16 +114,16 @@ fi
 
 # ---- f: real Claude Code -------------------------------------------------
 if [ "$FULL" = 1 ]; then
-  if command -v claude-zen >/dev/null 2>&1; then
+  if command -v claude-omni >/dev/null 2>&1; then
     T="$(mktemp -d)"; echo "codeword: BANANA-42" > "$T/secret.txt"
-    OUT="$(cd "$T" && claude-zen -p "Read secret.txt and tell me the codeword." \
+    OUT="$(cd "$T" && claude-omni -p "Read secret.txt and tell me the codeword." \
              --allowedTools Read --permission-mode acceptEdits 2>&1 || true)"
     printf '%s' "$OUT" | grep -q 'BANANA-42' \
       && ok "f  real Claude Code read a file through DeepSeek" \
       || { no "f  end-to-end run did not return the codeword"; info "$(printf '%s' "$OUT" | tail -3)"; }
     rm -rf "$T"
   else
-    no "f  claude-zen not on PATH"
+    no "f  claude-omni not on PATH"
   fi
 else
   info "skipping f (real Claude Code) -- re-run with --full to include it"
@@ -131,7 +131,7 @@ fi
 
 echo ""
 if [ "$fail" -eq 0 ]; then
-  printf '  \033[32m%d passed, 0 failed.\033[0m  Start with: claude-zen\n\n' "$pass"
+  printf '  \033[32m%d passed, 0 failed.\033[0m  Start with: claude-omni\n\n' "$pass"
   exit 0
 fi
 printf '  \033[31m%d passed, %d failed.\033[0m\n\n' "$pass" "$fail"

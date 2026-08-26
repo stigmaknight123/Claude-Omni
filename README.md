@@ -1,4 +1,4 @@
-# claude-zen
+# Claude-Omni
 
 Run **Claude Code** against OpenCode Zen, OpenCode Go, or OpenRouter — a small
 local proxy that translates their OpenAI-style API into the Anthropic protocol
@@ -7,11 +7,11 @@ Claude Code speaks. Defaults to Zen's free `deepseek-v4-flash-free` ($0).
 ## Install
 
 ```bash
-git clone https://github.com/stigmaknight123/claude-zen
-cd claude-zen
+git clone https://github.com/stigmaknight123/Claude-Omni
+cd Claude-Omni
 ./install.sh          # asks for your Zen API key
 ./verify.sh           # proves it works
-claude-zen            # start coding
+claude-omni            # start coding
 ```
 
 That's it — the proxy auto-starts if it isn't running.
@@ -35,7 +35,7 @@ upstream endpoint if you ever need a custom relay.
 ## Install with an AI assistant
 
 The simplest way: point an AI coding agent (Claude Code, OpenCode, Codex,
-Copilot, …) at this repo and ask it to set up `claude-zen`. It reads
+Copilot, …) at this repo and ask it to set up `claude-omni`. It reads
 [`AGENTS.md`](AGENTS.md) (or [`CLAUDE.md`](CLAUDE.md)) automatically, so it knows
 to run `install.sh` and `verify.sh --full` — you just supply your Zen key when it
 asks.
@@ -55,13 +55,13 @@ under WSL only.
 ## Usage
 
 ```bash
-claude-zen                          # interactive, default provider/model
-claude-zen -m hy3-free              # pick a specific model
-claude-zen -p "explain this bug"    # one-shot, no TUI
-claude-zen --status                 # probe every model: responding / rate-limited / dead
-claude-zen --list                   # just the model ids for the current provider
-claude-zen --update                 # git-pull and re-run install.sh
-claude-zen --version                # print the version
+claude-omni                          # interactive, default provider/model
+claude-omni -m hy3-free              # pick a specific model
+claude-omni -p "explain this bug"    # one-shot, no TUI
+claude-omni --status                 # probe every model: responding / rate-limited / dead
+claude-omni --list                   # just the model ids for the current provider
+claude-omni --update                 # git-pull and re-run install.sh
+claude-omni --version                # print the version
 ```
 
 ### Providers
@@ -75,40 +75,40 @@ Pick the provider with a flag (default is Zen):
 | `--openrouter`  | OpenRouter   | `:free` models                  | free        |
 
 ```bash
-claude-zen --go                                     # Go → deepseek-v4-flash
-claude-zen --go -m kimi-k3                          # a specific Go model
-claude-zen --openrouter                             # OpenRouter free models
-claude-zen --openrouter -m "nvidia/nemotron-3-ultra-550b-a55b:free"
-claude-zen --zen                                    # back to Zen (default)
+claude-omni --go                                     # Go → deepseek-v4-flash
+claude-omni --go -m kimi-k3                          # a specific Go model
+claude-omni --openrouter                             # OpenRouter free models
+claude-omni --openrouter -m "nvidia/nemotron-3-ultra-550b-a55b:free"
+claude-omni --zen                                    # back to Zen (default)
 ```
 
 ### Model fallback
 
-If the model you asked for isn't responding, `claude-zen` probes the catalog and
+If the model you asked for isn't responding, `claude-omni` probes the catalog and
 falls back to the first live model, trying a provider-specific priority list
 first. Override the order with `ZEN_PREFERRED` (space-separated model ids):
 
 ```bash
-ZEN_PREFERRED="hy3-free nemotron-3-ultra-free" claude-zen
+ZEN_PREFERRED="hy3-free nemotron-3-ultra-free" claude-omni
 ```
 
 Anything after those flags is passed straight through to `claude`, so
-`claude-zen --permission-mode acceptEdits` and friends all work.
+`claude-omni --permission-mode acceptEdits` and friends all work.
 
 **The `/model` picker won't list these models.** Switching means quitting and
 relaunching with a different `-m`. That's a Claude Code limitation.
 
 ### Shell completion
 
-`install.sh` drops a bash completion into `~/.zen-claude/claude-zen.bash`. Enable
+`install.sh` drops a bash completion into `~/.zen-claude/claude-omni.bash`. Enable
 it with:
 
 ```bash
-source ~/.zen-claude/claude-zen.bash
+source ~/.zen-claude/claude-omni.bash
 ```
 
-(or add that line to `~/.bashrc`). Then `claude-zen <TAB>` completes the flags,
-and `claude-zen -m <TAB>` completes the model ids.
+(or add that line to `~/.bashrc`). Then `claude-omni <TAB>` completes the flags,
+and `claude-omni -m <TAB>` completes the model ids.
 
 ---
 
@@ -185,13 +185,13 @@ reproduces the exact upstream error this proxy exists to avoid.
 **`CreditsError: No payment method` / `Insufficient balance`**
 You asked for a pay-per-credit Zen model without a balance. Use a `-free` model,
 add credits at [opencode.ai/zen](https://opencode.ai/zen), or use your
-subscription with `claude-zen --go`. Run `claude-zen --status` for the list.
+subscription with `claude-omni --go`. Run `claude-omni --status` for the list.
 
 **`The reasoning_content in the thinking mode must be passed back`**
 An old copy of the proxy. Pull the latest and re-run `./install.sh`.
 
 **`Unable to connect to API (ConnectionRefused)`**
-You ran `claude`, not `claude-zen`. The launcher starts the proxy for you.
+You ran `claude`, not `claude-omni`. The launcher starts the proxy for you.
 
 **Model answers nothing, `"stop_reason":"max_tokens"`**
 Reasoning models spend their token budget thinking before emitting text. Not a
@@ -201,15 +201,15 @@ bug — raise `max_tokens`.
 Expected. The launcher sets `ANTHROPIC_AUTH_TOKEN` to reach the local proxy.
 Harmless in this mode.
 
-**It works with `claude-zen` but plain `claude` behaves oddly**
+**It works with `claude-omni` but plain `claude` behaves oddly**
 An `env` block in `~/.claude/settings.json` overrides exported environment
-variables. `claude-zen` beats it by passing the model as a CLI flag. If that
+variables. `claude-omni` beats it by passing the model as a CLI flag. If that
 file pins `ANTHROPIC_*_MODEL` values from some earlier setup, they're still
 affecting your normal `claude` sessions.
 
 **A free model stopped working**
 Free lineups rotate constantly and dead entries stay listed in the catalog
-(Zen's `*-free` and OpenRouter's `:free` alike). `claude-zen` probes the model
+(Zen's `*-free` and OpenRouter's `:free` alike). `claude-omni` probes the model
 on launch and falls back to the first live one (preferred models first). Force a
 specific model with `-m`, or set `ZEN_PREFERRED` to reorder the fallback.
 
@@ -222,10 +222,10 @@ specific model with `-m`, or set `ZEN_PREFERRED` to reorder the fallback.
 ~/.zen-claude/zen-proxy.mjs  the bridge
 ~/.zen-claude/start.sh       runs the proxy on :8787
 ~/.zen-claude/proxy.log      upstream errors land here
-~/.local/bin/claude-zen      the launcher
+~/.local/bin/claude-omni      the launcher
 ```
 
-Uninstall: `rm -rf ~/.zen-claude ~/.local/bin/claude-zen`
+Uninstall: `rm -rf ~/.zen-claude ~/.local/bin/claude-omni`
 
 ## License
 
