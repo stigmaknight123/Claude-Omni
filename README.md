@@ -4,6 +4,17 @@ Run **Claude Code** against OpenCode Zen, OpenCode Go, or OpenRouter — a small
 local proxy that translates their OpenAI-style API into the Anthropic protocol
 Claude Code speaks. Defaults to Zen's free `deepseek-v4-flash-free` ($0).
 
+## Why use it
+
+- **$0 to run.** Point Claude Code at free models — DeepSeek V4 Flash and others —
+  with no Anthropic API key or per-token billing.
+- **Full Claude Code experience.** Tools, file editing, permissions, and the
+  agentic loop all work unchanged; only the model behind it changes.
+- **Three providers, one command.** Switch between OpenCode Zen (free),
+  OpenCode Go ($10/mo subscription), and OpenRouter (`:free`) with a flag.
+- **Self-healing.** If a model is down or rate-limited, `claude-omni` falls back
+  to a live one at launch *and* auto-swaps mid-session when free usage runs out.
+
 ## Install
 
 ```bash
