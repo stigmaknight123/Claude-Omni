@@ -18,6 +18,9 @@ const UPSTREAM = process.env.ZEN_BASE_URL ?? 'https://opencode.ai/zen/v1'
 const API_KEY = process.env.ZEN_API_KEY
 const PORT = Number(process.env.PORT ?? 8787)
 const DEBUG = process.env.ZEN_DEBUG === '1'
+// Models to try, in order, when the primary hits its free-usage limit. Set by
+// the launcher (space-separated); empty means "no fallback, pass the error up".
+const FALLBACK = (process.env.ZEN_FALLBACK_MODELS ?? '').split(/[\s,]+/).filter(Boolean)
 
 
 if (!API_KEY) {
@@ -383,6 +386,24 @@ const fail = (res, status, detail) => {
 }
 
 
+const isUsageLimit = (status, text) =>
+  status === 429 || /FreeUsageLimitError|rate limit|free usage/i.test(text ?? '')
+
+
+// On a free-usage error, try each fallback model until one answers.
+const tryFallback = async (payload) => {
+  for (const alt of FALLBACK) {
+    if (alt === payload.model) continue
+    const up = await send({ ...payload, model: alt })
+    if (up.ok) {
+      console.error(`free-usage fallback: ${payload.model} -> ${alt}`)
+      return up
+    }
+  }
+  return null
+}
+
+
 const readBody = (req) =>
   new Promise((resolve, reject) => {
     let d = ''
@@ -443,8 +464,19 @@ const server = http.createServer(async (req, res) => {
     }
 
 
+    // Free-tier models hit their usage cap with a 429 / FreeUsageLimitError.
+    // If the launcher supplied fallback models, silently switch to one that
+    // answers instead of surfacing the error to Claude Code.
     if (!upstream.ok) {
-      return fail(res, upstream.status, await upstream.text())
+      const status = upstream.status
+      const detail = await upstream.text()
+      if (FALLBACK.length && isUsageLimit(status, detail)) {
+        const alt = await tryFallback(payload)
+        if (!alt) return fail(res, status, detail)
+        upstream = alt
+      } else {
+        return fail(res, status, detail)
+      }
     }
 
 

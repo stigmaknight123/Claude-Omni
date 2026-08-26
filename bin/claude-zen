@@ -73,7 +73,7 @@ start_proxy() {
   fi
   [ -f "$START" ] || { echo "error: $START not found -- run install.sh" >&2; exit 1; }
   printf '%s\n' "$base" > "$MARK"
-  ZEN_API_KEY="$(key)" ZEN_BASE_URL="$base" nohup "$START" >>"$LOG" 2>&1 &
+  ZEN_API_KEY="$(key)" ZEN_BASE_URL="$base" ZEN_FALLBACK_MODELS="$(ordered_catalog 2>/dev/null | tr '\n' ' ')" nohup "$START" >>"$LOG" 2>&1 &
   for _ in $(seq 1 40); do
     proxy_up && { echo "zen-proxy up (http://127.0.0.1:${PORT})"; return; }
     sleep 0.5
