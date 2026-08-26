@@ -30,3 +30,18 @@ Rules:
 
 > Never commit a real key. The `sk-<your-zen-api-key>` placeholder keeps this
 > file safe to share in a public repo.
+
+## Optional: open in VS Code
+
+Append this step to the prompt if you want Claude Code running inside VS Code
+instead of a plain terminal:
+
+```text
+5. (Optional) Open claude-zen in VS Code. Easiest route: open a WSL terminal
+   in VS Code and run `claude-zen` — no extra setup, the launcher configures
+   itself. For the Claude Code panel instead: install the "Claude Code"
+   extension, open a WSL window, and add an `env` block to
+   `~/.claude/settings.json` setting `ANTHROPIC_BASE_URL=http://127.0.0.1:8787`,
+   `ANTHROPIC_AUTH_TOKEN=zen-local-proxy`, and your model — otherwise the panel
+   bypasses the proxy and talks to Anthropic directly.
+```
