@@ -81,6 +81,9 @@ claude-omni --version                # print the version
 A bare `claude-omni` remembers the last provider and model you used (stored in
 `~/.zen-claude/.state`); use `--reset` to clear it.
 
+`claude-omni` also auto-updates on launch — it fetches the repo and re-installs
+if a newer commit is available. Set `CLAUDE_OMNI_NO_UPDATE=1` to disable.
+
 ### Providers
 
 Pick the provider with a flag (default is Zen):

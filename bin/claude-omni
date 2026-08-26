@@ -15,9 +15,38 @@ START="$DIR/start.sh"
 LOG="$DIR/proxy.log"
 MARK="$DIR/.zen-base-url"
 STATE="$DIR/.state"
-VERSION="1.1.0"
+VERSION="1.2.0"
 MODE_EXPLICIT=0
 FROM_STATE=0
+
+# Auto-update on launch: pull the repo and re-install if we're behind.
+# Set CLAUDE_OMNI_NO_UPDATE=1 to disable.
+auto_update() {
+  [ "${CLAUDE_OMNI_NO_UPDATE:-0}" = "1" ] && return 0
+  case "${1:-}" in
+    --status|--list|--doctor|--update|--version|--reset|--uninstall|-h|--help) return 0 ;;
+  esac
+  local src before after
+  src="$(cat "$DIR/.repo-path" 2>/dev/null || true)"
+  [ -n "$src" ] && [ -d "$src/.git" ] || return 0
+  before="$(git -C "$src" rev-parse HEAD 2>/dev/null || true)"
+  if command -v timeout >/dev/null 2>&1; then
+    timeout 10 git -C "$src" fetch --quiet origin main 2>/dev/null || return 0
+  else
+    git -C "$src" fetch --quiet origin main 2>/dev/null || return 0
+  fi
+  after="$(git -C "$src" rev-parse origin/main 2>/dev/null || true)"
+  [ -n "$before" ] && [ -n "$after" ] && [ "$before" != "$after" ] || return 0
+  echo "claude-omni: update available, applying..."
+  ( cd "$src" && git pull --ff-only --quiet origin main && ./install.sh >/dev/null 2>&1 ) || {
+    echo "claude-omni: update failed, continuing with current version" >&2
+    return 0
+  }
+  echo "claude-omni: updated, restarting..."
+  exec "$0" "$@"
+}
+
+auto_update "$@"
 
 usage() {
   cat <<'EOF'
