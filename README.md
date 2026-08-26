@@ -1,14 +1,14 @@
 # claude-zen
 
-Run **Claude Code** on free models through [OpenCode Zen](https://opencode.ai) —
-a small local proxy that translates Zen's OpenAI-style API into the Anthropic
-protocol Claude Code speaks.
+Run **Claude Code** against OpenCode Zen, OpenCode Go, or OpenRouter — a small
+local proxy that translates their OpenAI-style API into the Anthropic protocol
+Claude Code speaks.
 
-Default model is `deepseek-v4-flash-free`. Cost: $0.
+Defaults to Zen's free `deepseek-v4-flash-free`. Cost: $0.
 
-> Unofficial community tool. Not affiliated with or endorsed by Anthropic or
-> OpenCode. It relies on a third party's free tier, which can change or
-> disappear at any time.
+> Unofficial community tool. Not affiliated with or endorsed by Anthropic,
+> OpenCode, or OpenRouter. Free tiers and model lineups can change or disappear
+> at any time.
 
 **Requirements:** macOS or Linux, Node 18+, Python 3, and Claude Code installed.
 Windows works under WSL only.
@@ -18,14 +18,15 @@ Windows works under WSL only.
 ## Install
 
 ```bash
-git clone https://github.com/YOURNAME/claude-zen
+git clone https://github.com/stigmaknight123/claude-zen
 cd claude-zen
 ./install.sh          # asks for your Zen API key
 ./verify.sh           # proves it works
 ```
 
-Get a free key at [opencode.ai](https://opencode.ai). It looks like `sk-` plus
-61 characters.
+Get a Zen key at [opencode.ai](https://opencode.ai) (looks like `sk-` plus 61
+characters). For `--openrouter` you'll also need a key from
+[openrouter.ai](https://openrouter.ai) — see [API keys](#api-keys).
 
 Then:
 
@@ -35,13 +36,53 @@ claude-zen
 
 That's it. The proxy auto-starts if it isn't running.
 
+### API keys
+
+All keys live in `~/.zen-claude/.env`:
+
+```bash
+ZEN_API_KEY=sk-...                 # Zen + Go (same key; Go bills your subscription)
+OPENROUTER_API_KEY=sk-or-v1-...    # only needed for --openrouter
+```
+
+The launcher picks the right key per provider. `ZEN_BASE_URL` can override the
+upstream endpoint if you ever need a custom relay.
+
 ## Usage
 
 ```bash
-claude-zen                       # interactive, default free model
-claude-zen -m longcat-2.0-free   # pick a specific model
-claude-zen -p "explain this bug" # one-shot, no TUI
-claude-zen --status              # proxy state + live free-model list
+claude-zen                          # interactive, default provider/model
+claude-zen -m hy3-free              # pick a specific model
+claude-zen -p "explain this bug"    # one-shot, no TUI
+claude-zen --status                 # proxy state + live model list
+```
+
+### Providers
+
+Pick the provider with a flag (default is Zen):
+
+| Flag            | Provider     | Models                          | Cost        |
+| --------------- | ------------ | ------------------------------- | ----------- |
+| `--zen`         | OpenCode Zen | `*-free` and pay-per-credit     | free / PAYG |
+| `--go`          | OpenCode Go  | subscription (DeepSeek, Kimi…)  | $10/month   |
+| `--openrouter`  | OpenRouter   | `:free` models                  | free        |
+
+```bash
+claude-zen --go                                     # Go → deepseek-v4-flash
+claude-zen --go -m kimi-k3                          # a specific Go model
+claude-zen --openrouter                             # OpenRouter free models
+claude-zen --openrouter -m "nvidia/nemotron-3-ultra-550b-a55b:free"
+claude-zen --zen                                    # back to Zen (default)
+```
+
+### Model fallback
+
+If the model you asked for isn't responding, `claude-zen` probes the catalog and
+falls back to the first live model, trying a provider-specific priority list
+first. Override the order with `ZEN_PREFERRED` (space-separated model ids):
+
+```bash
+ZEN_PREFERRED="hy3-free nemotron-3-ultra-free" claude-zen
 ```
 
 Anything after those flags is passed straight through to `claude`, so
@@ -122,10 +163,10 @@ reproduces the exact upstream error this proxy exists to avoid.
 
 ## Troubleshooting
 
-**`CreditsError: No payment method`**
-You used a paid model. Only `-free` suffixed models are free — the catalog also
-lists `claude-*` and `gpt-*` models that bill you. Run `claude-zen --status` for
-the current free list.
+**`CreditsError: No payment method` / `Insufficient balance`**
+You asked for a pay-per-credit Zen model without a balance. Use a `-free` model,
+add credits at [opencode.ai/zen](https://opencode.ai/zen), or use your
+subscription with `claude-zen --go`. Run `claude-zen --status` for the list.
 
 **`The reasoning_content in the thinking mode must be passed back`**
 An old copy of the proxy. Pull the latest and re-run `./install.sh`.
@@ -148,16 +189,17 @@ file pins `ANTHROPIC_*_MODEL` values from some earlier setup, they're still
 affecting your normal `claude` sessions.
 
 **A free model stopped working**
-Zen rotates its free lineup and dead entries stay listed in the catalog.
-`claude-zen` probes the model on launch and automatically falls back to a live
-free one. Force a specific model with `-m`.
+Free lineups rotate constantly and dead entries stay listed in the catalog
+(Zen's `*-free` and OpenRouter's `:free` alike). `claude-zen` probes the model
+on launch and falls back to the first live one (preferred models first). Force a
+specific model with `-m`, or set `ZEN_PREFERRED` to reorder the fallback.
 
 ---
 
 ## What gets installed
 
 ```
-~/.zen-claude/.env           your API key (chmod 600, never committed)
+~/.zen-claude/.env           your API keys (chmod 600, never committed)
 ~/.zen-claude/zen-proxy.mjs  the bridge
 ~/.zen-claude/start.sh       runs the proxy on :8787
 ~/.zen-claude/proxy.log      upstream errors land here
