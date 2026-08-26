@@ -48,6 +48,18 @@ OPENROUTER_API_KEY=sk-or-v1-...    # only needed for --openrouter
 The launcher picks the right key per provider. `ZEN_BASE_URL` can override the
 upstream endpoint if you ever need a custom relay.
 
+## Install with an AI assistant
+
+[`PROMPT.md`](PROMPT.md) holds a ready-to-paste prompt that walks an AI coding
+assistant (Claude Code, OpenCode, ChatGPT, …) through the setup end to end. To
+use it:
+
+1. Open [`PROMPT.md`](PROMPT.md) and copy the fenced code block.
+2. Paste it into your assistant and replace `sk-<your-zen-api-key>` with your
+   real key.
+3. The assistant clones the repo, runs `install.sh`, then `verify.sh --full`,
+   and finishes by telling you the launch command (`claude-zen`).
+
 ## Usage
 
 ```bash
