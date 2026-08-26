@@ -2,18 +2,7 @@
 
 Run **Claude Code** against OpenCode Zen, OpenCode Go, or OpenRouter — a small
 local proxy that translates their OpenAI-style API into the Anthropic protocol
-Claude Code speaks.
-
-Defaults to Zen's free `deepseek-v4-flash-free`. Cost: $0.
-
-> Unofficial community tool. Not affiliated with or endorsed by Anthropic,
-> OpenCode, or OpenRouter. Free tiers and model lineups can change or disappear
-> at any time.
-
-**Requirements:** macOS or Linux, Node 18+, Python 3, and Claude Code installed.
-Windows works under WSL only.
-
----
+Claude Code speaks. Defaults to Zen's free `deepseek-v4-flash-free` ($0).
 
 ## Install
 
@@ -22,19 +11,14 @@ git clone https://github.com/stigmaknight123/claude-zen
 cd claude-zen
 ./install.sh          # asks for your Zen API key
 ./verify.sh           # proves it works
+claude-zen            # start coding
 ```
+
+That's it — the proxy auto-starts if it isn't running.
 
 Get a Zen key at [opencode.ai](https://opencode.ai) (looks like `sk-` plus 61
 characters). For `--openrouter` you'll also need a key from
 [openrouter.ai](https://openrouter.ai) — see [API keys](#api-keys).
-
-Then:
-
-```bash
-claude-zen
-```
-
-That's it. The proxy auto-starts if it isn't running.
 
 ### API keys
 
@@ -59,6 +43,15 @@ use it:
    real key.
 3. The assistant clones the repo, runs `install.sh`, then `verify.sh --full`,
    and finishes by telling you the launch command (`claude-zen`).
+
+## Requirements
+
+macOS or Linux, Node 18+, Python 3, and Claude Code installed. Windows works
+under WSL only.
+
+> Unofficial community tool. Not affiliated with or endorsed by Anthropic,
+> OpenCode, or OpenRouter. Free tiers and model lineups can change or disappear
+> at any time.
 
 ## Usage
 
