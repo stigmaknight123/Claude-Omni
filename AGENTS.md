@@ -4,8 +4,9 @@ Instructions for AI coding agents working in this repository.
 
 ## What this is
 
-`claude-omni` runs Claude Code against OpenCode Zen, OpenCode Go, or OpenRouter
-through a small local proxy that translates their OpenAI-style API into the
+`claude-omni` runs Claude Code against any OpenAI-compatible provider — OpenCode
+Zen/Go, OpenRouter, Groq, Cerebras, Gemini, Mistral, Together, NVIDIA, and
+Hugging Face — through a small local proxy that translates their API into the
 Anthropic protocol Claude Code speaks. See `README.md` for details.
 
 ## Setting it up for the user
