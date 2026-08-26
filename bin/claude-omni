@@ -7,7 +7,7 @@ set -euo pipefail
 
 MODEL="${DEFAULT_ZEN_MODEL:-deepseek-v4-flash-free}"
 MODEL_EXPLICIT=0
-MODE="zen"                 # "zen" | "go" | "openrouter"
+MODE="zen"                 # zen | go | openrouter | groq | cerebras | gemini | mistral | together | nvidia | huggingface
 PORT="${ZEN_PROXY_PORT:-8787}"
 HEALTH="http://127.0.0.1:${PORT}/health"
 DIR="$HOME/.zen-claude"
@@ -15,7 +15,7 @@ START="$DIR/start.sh"
 LOG="$DIR/proxy.log"
 MARK="$DIR/.zen-base-url"
 STATE="$DIR/.state"
-VERSION="1.2.0"
+VERSION="1.3.0"
 MODE_EXPLICIT=0
 FROM_STATE=0
 
@@ -50,12 +50,21 @@ auto_update "$@"
 
 usage() {
   cat <<'EOF'
-Usage: claude-omni [-m <model>] [--go|--zen|--openrouter] [--status|--list] [-- claude args...]
+Usage: claude-omni [-m <model>] [--<provider>] [--status|--list] [-- claude args...]
+
+Providers (pick one; default is --zen):
+  --zen           OpenCode Zen      (free + pay-per-credit)
+  --go            OpenCode Go       (subscription)
+  --openrouter    OpenRouter        (the :free lineup)
+  --groq          Groq              (free tier)
+  --cerebras      Cerebras          (free tier)
+  --gemini        Google Gemini     (AI Studio free tier)
+  --mistral       Mistral           (free tier)
+  --together      Together AI       (free models)
+  --nvidia        NVIDIA NIM        (free trial)
+  --huggingface   Hugging Face      (free tier)
 
   -m <model>      Model to use (default: last used, else the provider default)
-  --go            Use OpenCode Go models (subscription endpoint)
-  --zen           Use OpenCode Zen models (default; free + pay-per-credit)
-  --openrouter    Use OpenRouter models (the :free lineup)
   --status        Probe every model and show which are live
   --list          List the model ids for the current provider
   --doctor        Check prerequisites, key, proxy, and a model probe
@@ -69,28 +78,50 @@ Everything else is forwarded to the real `claude`.
 EOF
 }
 
-key() {
+# Env var name holding the API key for the current provider.
+key_var() {
   case "$MODE" in
-    openrouter) grep '^OPENROUTER_API_KEY=' "$DIR/.env" | cut -d= -f2- ;;
-    *)          grep '^ZEN_API_KEY=' "$DIR/.env" | cut -d= -f2- ;;
+    zen|go)      printf 'ZEN_API_KEY' ;;
+    openrouter)  printf 'OPENROUTER_API_KEY' ;;
+    groq)        printf 'GROQ_API_KEY' ;;
+    cerebras)    printf 'CEREBRAS_API_KEY' ;;
+    gemini)      printf 'GEMINI_API_KEY' ;;
+    mistral)     printf 'MISTRAL_API_KEY' ;;
+    together)    printf 'TOGETHER_API_KEY' ;;
+    nvidia)      printf 'NVIDIA_API_KEY' ;;
+    huggingface) printf 'HF_TOKEN' ;;
+    *)           printf 'ZEN_API_KEY' ;;
   esac
 }
 
-# Endpoint the proxy and the probes talk to. Same key works for both.
+key() {
+  grep "^$(key_var)=" "$DIR/.env" | cut -d= -f2-
+}
+
+# Endpoint the proxy and the probes talk to. All OpenAI chat/completions.
 api_base() {
   case "$MODE" in
-    go)         printf 'https://opencode.ai/zen/go/v1' ;;
-    openrouter) printf 'https://openrouter.ai/api/v1' ;;
-    *)          printf 'https://opencode.ai/zen/v1' ;;
+    zen)         printf 'https://opencode.ai/zen/v1' ;;
+    go)          printf 'https://opencode.ai/zen/go/v1' ;;
+    openrouter)  printf 'https://openrouter.ai/api/v1' ;;
+    groq)        printf 'https://api.groq.com/openai/v1' ;;
+    cerebras)    printf 'https://api.cerebras.ai/v1' ;;
+    gemini)      printf 'https://generativelanguage.googleapis.com/v1beta/openai' ;;
+    mistral)     printf 'https://api.mistral.ai/v1' ;;
+    together)    printf 'https://api.together.xyz/v1' ;;
+    nvidia)      printf 'https://integrate.api.nvidia.com/v1' ;;
+    huggingface) printf 'https://router.huggingface.co/v1' ;;
+    *)           printf 'https://opencode.ai/zen/v1' ;;
   esac
 }
 
 # Default model per provider (used when nothing is pinned via -m or env).
 default_model() {
   case "$MODE" in
+    zen)        printf 'deepseek-v4-flash-free' ;;
     go)         printf 'deepseek-v4-flash' ;;
     openrouter) printf 'deepseek/deepseek-chat:free' ;;
-    *)          printf 'deepseek-v4-flash-free' ;;
+    *)          preferred | head -1 ;;   # first curated model for other providers
   esac
 }
 
@@ -103,7 +134,7 @@ load_state() {
   [ -f "$STATE" ] || return 0
   local m mm
   m="$(grep '^MODE=' "$STATE" | cut -d= -f2- || true)"
-  case "$m" in zen|go|openrouter) MODE="$m" ;; esac
+  case "$m" in zen|go|openrouter|groq|cerebras|gemini|mistral|together|nvidia|huggingface) MODE="$m" ;; esac
   mm="$(grep '^MODEL=' "$STATE" | cut -d= -f2- || true)"
   if [ -n "$mm" ]; then MODEL="$mm"; FROM_STATE=1; fi
 }
@@ -160,9 +191,14 @@ probe_model() {
   fi
 }
 
-# Catalog for the current mode: Zen mode lists the -free lineup, Go mode lists
-# the subscription models (not -free), OpenRouter lists the :free lineup.
+# Catalog for the current mode. Zen/Go/OpenRouter are fetched live; the rest
+# use a curated static list (see preferred()) since their catalogs are huge or
+# their "free" subset isn't marked in the id.
 catalog() {
+  case "$MODE" in
+    zen|go|openrouter) ;;
+    *) preferred; return ;;
+  esac
   local ids
   ids="$(curl -sf --max-time 10 "$(api_base)/models" \
     -H "Authorization: Bearer $(key)" 2>/dev/null \
@@ -205,6 +241,41 @@ preferred() {
         'longcat-2.0' \
         'hy3' \
         'deepseek-v4-flash' ;;
+    groq)
+      printf '%s\n' \
+        'llama-3.3-70b-versatile' \
+        'llama-3.1-8b-instant' \
+        'mixtral-8x7b-32768' \
+        'gemma2-9b-it' ;;
+    cerebras)
+      printf '%s\n' \
+        'llama3.3-70b' \
+        'llama3.1-8b' ;;
+    gemini)
+      printf '%s\n' \
+        'gemini-2.0-flash' \
+        'gemini-2.0-flash-lite' \
+        'gemini-1.5-flash' ;;
+    mistral)
+      printf '%s\n' \
+        'mistral-small-latest' \
+        'open-mistral-nemo' \
+        'open-mistral-7b' ;;
+    together)
+      printf '%s\n' \
+        'meta-llama/Llama-3.3-70B-Instruct-Turbo' \
+        'deepseek-ai/DeepSeek-R1' \
+        'mistralai/Mixtral-8x7B-Instruct-v0.1' ;;
+    nvidia)
+      printf '%s\n' \
+        'meta/llama-3.3-70b-instruct' \
+        'deepseek-ai/deepseek-r1' \
+        'mistralai/mistral-7b-instruct-v0.3' ;;
+    huggingface)
+      printf '%s\n' \
+        'Qwen/Qwen2.5-Coder-32B-Instruct' \
+        'meta-llama/Llama-3.3-70B-Instruct' \
+        'deepseek-ai/DeepSeek-R1' ;;
   esac
 }
 
@@ -231,7 +302,8 @@ ordered_catalog() {
 resolve_model() {
   if model_alive "$MODEL"; then return; fi
 
-  local desc="free models"
+  local desc="$MODE models"
+  [ "$MODE" = "zen" ] && desc="free models"
   [ "$MODE" = "go" ] && desc="Go models"
   [ "$MODE" = "openrouter" ] && desc="OpenRouter free models"
   if [ "$MODEL_EXPLICIT" = 1 ]; then
@@ -267,9 +339,10 @@ status() {
   [ -n "$endpt" ] && echo "running proxy on: $endpt"
   echo ""
   case "$MODE" in
+    zen)        echo "Free models in the Zen catalog:" ;;
     go)         echo "Go models (subscription):" ;;
     openrouter) echo "OpenRouter free models:" ;;
-    *)          echo "Free models in the Zen catalog:" ;;
+    *)          echo "$MODE models:" ;;
   esac
   local m st
   for m in $(ordered_catalog); do
@@ -358,6 +431,13 @@ while [ $# -gt 0 ]; do
     --go)     MODE="go"; MODE_EXPLICIT=1; shift ;;
     --zen)    MODE="zen"; MODE_EXPLICIT=1; shift ;;
     --openrouter) MODE="openrouter"; MODE_EXPLICIT=1; shift ;;
+    --groq)   MODE="groq"; MODE_EXPLICIT=1; shift ;;
+    --cerebras) MODE="cerebras"; MODE_EXPLICIT=1; shift ;;
+    --gemini) MODE="gemini"; MODE_EXPLICIT=1; shift ;;
+    --mistral) MODE="mistral"; MODE_EXPLICIT=1; shift ;;
+    --together) MODE="together"; MODE_EXPLICIT=1; shift ;;
+    --nvidia) MODE="nvidia"; MODE_EXPLICIT=1; shift ;;
+    --huggingface) MODE="huggingface"; MODE_EXPLICIT=1; shift ;;
     --status) status; exit 0 ;;
     --list)   catalog | sed 's/^/  /'; exit 0 ;;
     --doctor) doctor; exit 0 ;;

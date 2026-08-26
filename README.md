@@ -1,7 +1,8 @@
 # Claude-Omni
 
-Run **Claude Code** against OpenCode Zen, OpenCode Go, or OpenRouter — a small
-local proxy that translates their OpenAI-style API into the Anthropic protocol
+Run **Claude Code** against any OpenAI-compatible provider — OpenCode Zen/Go,
+OpenRouter, Groq, Cerebras, Gemini, Mistral, Together, NVIDIA, and Hugging Face —
+through a small local proxy that translates their API into the Anthropic protocol
 Claude Code speaks. Defaults to Zen's free `deepseek-v4-flash-free` ($0).
 
 ## Why use it
@@ -10,8 +11,8 @@ Claude Code speaks. Defaults to Zen's free `deepseek-v4-flash-free` ($0).
   with no Anthropic API key or per-token billing.
 - **Full Claude Code experience.** Tools, file editing, permissions, and the
   agentic loop all work unchanged; only the model behind it changes.
-- **Three providers, one command.** Switch between OpenCode Zen (free),
-  OpenCode Go ($10/mo subscription), and OpenRouter (`:free`) with a flag.
+- **Ten providers, one command.** Switch between OpenCode Zen/Go, OpenRouter,
+  Groq, Cerebras, Gemini, Mistral, Together, NVIDIA, and Hugging Face with a flag.
 - **Self-healing.** If a model is down or rate-limited, `claude-omni` falls back
   to a live one at launch *and* auto-swaps mid-session when free usage runs out.
 
@@ -36,9 +37,18 @@ characters). For `--openrouter` you'll also need a key from
 All keys live in `~/.zen-claude/.env`:
 
 ```bash
-ZEN_API_KEY=sk-...                 # Zen + Go (same key; Go bills your subscription)
-OPENROUTER_API_KEY=sk-or-v1-...    # only needed for --openrouter
+ZEN_API_KEY=sk-...        # Zen + Go (same key; Go bills your subscription)
+OPENROUTER_API_KEY=...    # --openrouter
+GROQ_API_KEY=...          # --groq
+CEREBRAS_API_KEY=...      # --cerebras
+GEMINI_API_KEY=...        # --gemini (AI Studio)
+MISTRAL_API_KEY=...       # --mistral
+TOGETHER_API_KEY=...      # --together
+NVIDIA_API_KEY=...        # --nvidia
+HF_TOKEN=...              # --huggingface
 ```
+
+Only add the keys for providers you actually use.
 
 The launcher picks the right key per provider. `ZEN_BASE_URL` can override the
 upstream endpoint if you ever need a custom relay.
@@ -88,19 +98,30 @@ if a newer commit is available. Set `CLAUDE_OMNI_NO_UPDATE=1` to disable.
 
 Pick the provider with a flag (default is Zen):
 
-| Flag            | Provider     | Models                          | Cost        |
-| --------------- | ------------ | ------------------------------- | ----------- |
-| `--zen`         | OpenCode Zen | `*-free` and pay-per-credit     | free / PAYG |
-| `--go`          | OpenCode Go  | subscription (DeepSeek, Kimi…)  | $10/month   |
-| `--openrouter`  | OpenRouter   | `:free` models                  | free        |
+| Flag            | Provider      | Cost        |
+| --------------- | ------------- | ----------- |
+| `--zen`         | OpenCode Zen  | free / PAYG |
+| `--go`          | OpenCode Go   | $10/month   |
+| `--openrouter`  | OpenRouter    | free        |
+| `--groq`        | Groq          | free tier   |
+| `--cerebras`    | Cerebras      | free tier   |
+| `--gemini`      | Google Gemini | free tier   |
+| `--mistral`     | Mistral       | free tier   |
+| `--together`    | Together AI   | free models |
+| `--nvidia`      | NVIDIA NIM    | free trial  |
+| `--huggingface` | Hugging Face  | free tier   |
 
 ```bash
-claude-omni --go                                     # Go → deepseek-v4-flash
-claude-omni --go -m kimi-k3                          # a specific Go model
-claude-omni --openrouter                             # OpenRouter free models
-claude-omni --openrouter -m "nvidia/nemotron-3-ultra-550b-a55b:free"
-claude-omni --zen                                    # back to Zen (default)
+claude-omni --go                                    # Go → deepseek-v4-flash
+claude-omni --openrouter                            # OpenRouter free models
+claude-omni --groq                                  # Groq → llama-3.3-70b-versatile
+claude-omni --gemini -m gemini-2.0-flash            # a specific Gemini model
+claude-omni --zen                                   # back to Zen (default)
 ```
+
+Zen, Go, and OpenRouter list their models live. The other providers use a small
+curated list of known-free models (kept in `preferred()` in `bin/claude-omni`) —
+edit it to add your own.
 
 ### Model fallback
 
