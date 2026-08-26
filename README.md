@@ -34,15 +34,14 @@ upstream endpoint if you ever need a custom relay.
 
 ## Install with an AI assistant
 
-[`PROMPT.md`](PROMPT.md) holds a ready-to-paste prompt that walks an AI coding
-assistant (Claude Code, OpenCode, ChatGPT, …) through the setup end to end. To
-use it:
+The simplest way: point an AI coding agent (Claude Code, OpenCode, Codex,
+Copilot, …) at this repo and ask it to set up `claude-zen`. It reads
+[`AGENTS.md`](AGENTS.md) (or [`CLAUDE.md`](CLAUDE.md)) automatically, so it knows
+to run `install.sh` and `verify.sh --full` — you just supply your Zen key when it
+asks.
 
-1. Open [`PROMPT.md`](PROMPT.md) and copy the fenced code block.
-2. Paste it into your assistant and replace `sk-<your-zen-api-key>` with your
-   real key.
-3. The assistant clones the repo, runs `install.sh`, then `verify.sh --full`,
-   and finishes by telling you the launch command (`claude-zen`).
+Prefer to drive it yourself? [`PROMPT.md`](PROMPT.md) holds a ready-to-paste
+prompt: copy the block, swap in your key, and paste it into any assistant.
 
 ## Requirements
 
