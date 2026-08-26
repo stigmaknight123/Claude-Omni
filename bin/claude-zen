@@ -7,26 +7,52 @@ set -euo pipefail
 
 MODEL="${DEFAULT_ZEN_MODEL:-deepseek-v4-flash-free}"
 MODEL_EXPLICIT=0
+MODE="zen"                 # "zen" | "go" | "openrouter"
 PORT="${ZEN_PROXY_PORT:-8787}"
 HEALTH="http://127.0.0.1:${PORT}/health"
 DIR="$HOME/.zen-claude"
 START="$DIR/start.sh"
 LOG="$DIR/proxy.log"
+MARK="$DIR/.zen-base-url"
 
 usage() {
   cat <<'EOF'
-Usage: claude-zen [-m <model>] [--status] [-- claude args...]
+Usage: claude-zen [-m <model>] [--go|--zen|--openrouter] [--status] [-- claude args...]
 
-  -m <model>   Model to use (default: deepseek-v4-flash-free)
-  --status     Print proxy status, the Zen catalog, and probe the model
-  -h, --help   Show this help
+  -m <model>      Model to use (default depends on provider)
+  --go            Use OpenCode Go models (subscription endpoint)
+  --zen           Use OpenCode Zen models (default; free + pay-per-credit)
+  --openrouter    Use OpenRouter models (the :free lineup)
+  --status        Print proxy status, the catalog, and probe the model
+  -h, --help      Show this help
 
 Everything else is forwarded to the real `claude`.
 EOF
 }
 
 key() {
-  grep '^ZEN_API_KEY=' "$DIR/.env" | cut -d= -f2-
+  case "$MODE" in
+    openrouter) grep '^OPENROUTER_API_KEY=' "$DIR/.env" | cut -d= -f2- ;;
+    *)          grep '^ZEN_API_KEY=' "$DIR/.env" | cut -d= -f2- ;;
+  esac
+}
+
+# Endpoint the proxy and the probes talk to. Same key works for both.
+api_base() {
+  case "$MODE" in
+    go)         printf 'https://opencode.ai/zen/go/v1' ;;
+    openrouter) printf 'https://openrouter.ai/api/v1' ;;
+    *)          printf 'https://opencode.ai/zen/v1' ;;
+  esac
+}
+
+# Default model per provider (used when nothing is pinned via -m or env).
+default_model() {
+  case "$MODE" in
+    go)         printf 'deepseek-v4-flash' ;;
+    openrouter) printf 'deepseek/deepseek-chat:free' ;;
+    *)          printf 'deepseek-v4-flash-free' ;;
+  esac
 }
 
 proxy_up() {
@@ -34,10 +60,20 @@ proxy_up() {
 }
 
 start_proxy() {
-  if proxy_up; then return; fi
-  echo "starting zen-proxy..."
+  local base; base="$(api_base)"
+  if proxy_up; then
+    # Only restart if the running proxy is on a different endpoint.
+    [ "$(cat "$MARK" 2>/dev/null || true)" = "$base" ] && return
+    echo "zen-proxy endpoint changed, restarting..."
+    local pid; pid="$(lsof -ti tcp:"$PORT" 2>/dev/null || true)"
+    [ -n "$pid" ] && kill "$pid" 2>/dev/null
+    sleep 1
+  else
+    echo "starting zen-proxy..."
+  fi
   [ -f "$START" ] || { echo "error: $START not found -- run install.sh" >&2; exit 1; }
-  nohup "$START" >>"$LOG" 2>&1 &
+  printf '%s\n' "$base" > "$MARK"
+  ZEN_API_KEY="$(key)" ZEN_BASE_URL="$base" nohup "$START" >>"$LOG" 2>&1 &
   for _ in $(seq 1 40); do
     proxy_up && { echo "zen-proxy up (http://127.0.0.1:${PORT})"; return; }
     sleep 0.5
@@ -46,38 +82,98 @@ start_proxy() {
   exit 1
 }
 
-# One cheap no-tools call. Free models come and go, so "is it in the catalog"
+# One cheap no-tools call. Models come and go, so "is it in the catalog"
 # is not the same question as "does it answer".
 model_alive() {
-  curl -sf --max-time 25 https://opencode.ai/zen/v1/chat/completions \
+  curl -sf --max-time 25 "$(api_base)/chat/completions" \
     -H "Authorization: Bearer $(key)" -H 'content-type: application/json' \
     -d "{\"model\":\"$1\",\"max_tokens\":600,\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}" \
     2>/dev/null | grep -q '"choices"'
 }
 
-free_models() {
-  curl -sf --max-time 10 https://opencode.ai/zen/v1/models \
+# Catalog for the current mode: Zen mode lists the -free lineup, Go mode lists
+# the subscription models (not -free), OpenRouter lists the :free lineup.
+catalog() {
+  local ids
+  ids="$(curl -sf --max-time 10 "$(api_base)/models" \
     -H "Authorization: Bearer $(key)" 2>/dev/null \
     | python3 -c 'import sys,json
 for m in json.load(sys.stdin).get("data",[]):
-    i=m.get("id","")
-    if i.endswith("-free"): print(i)' 2>/dev/null
+    print(m.get("id",""))' 2>/dev/null)"
+  case "$MODE" in
+    go)         printf '%s\n' "$ids" | grep -v '\-free$' ;;
+    openrouter) printf '%s\n' "$ids" | grep ':free$' ;;
+    *)          printf '%s\n' "$ids" | grep '\-free$' ;;
+  esac
 }
 
-# Zen rotates its free lineup constantly and dead entries stay in the catalog,
-# so a hardcoded default goes stale on its own. Fall back to whatever is up.
+# Soft priority order for the fallback picker (provider-specific, space
+# separated). Models not listed are still tried afterward; override with
+# ZEN_PREFERRED="id1 id2 ...". Ordered roughly by generosity/reliability.
+preferred() {
+  if [ -n "${ZEN_PREFERRED:-}" ]; then printf '%s\n' "$ZEN_PREFERRED"; return; fi
+  case "$MODE" in
+    openrouter)
+      printf '%s\n' \
+        'nvidia/nemotron-3-ultra-550b-a55b:free' \
+        'nvidia/nemotron-3-super-120b-a12b:free' \
+        'google/gemma-4-31b-it:free' \
+        'google/gemma-4-26b-a4b-it:free' \
+        'z-ai/glm-5.2:free' \
+        'minimax/minimax-m3:free' \
+        'minimax/minimax-m2.7:free' \
+        'cohere/north-mini-code:free' ;;
+    zen)
+      printf '%s\n' \
+        'hy3-free' \
+        'nemotron-3-ultra-free' \
+        'nemotron-3.5-lightning-free' \
+        'laguna-s-2.1-free' \
+        'mimo-v2.5-free' ;;
+    go)
+      printf '%s\n' \
+        'mimo-v2.5' \
+        'longcat-2.0' \
+        'hy3' \
+        'deepseek-v4-flash' ;;
+  esac
+}
+
+in_list() {
+  local w="$1" x
+  for x in $2; do [ "$x" = "$w" ] && return 0; done
+  return 1
+}
+
+# The catalog is fetched fresh every run, so the candidate list is already
+# dynamic (new models appear, dead ones vanish). We add a soft priority on top:
+# preferred models are tried first, then the rest -- and anything currently
+# rate-limited is skipped by the live probe.
+ordered_catalog() {
+  local all pref m
+  all="$(catalog)"
+  pref="$(preferred)"
+  for m in $pref; do printf '%s\n' "$all" | grep -qx "$m" && echo "$m"; done
+  for m in $all; do in_list "$m" "$pref" || echo "$m"; done
+}
+
+# The lineup rotates constantly and dead entries stay in the catalog, so a
+# hardcoded default goes stale on its own. Fall back to whatever is up.
 resolve_model() {
   if model_alive "$MODEL"; then return; fi
 
+  local desc="free models"
+  [ "$MODE" = "go" ] && desc="Go models"
+  [ "$MODE" = "openrouter" ] && desc="OpenRouter free models"
   if [ "$MODEL_EXPLICIT" = 1 ]; then
     echo "error: model '$MODEL' is not responding." >&2
-    echo "       free models currently listed:" >&2
-    free_models | sed 's/^/         /' >&2
+    echo "       $desc currently listed:" >&2
+    catalog | sed 's/^/         /' >&2
     exit 1
   fi
 
-  echo "note: '$MODEL' is not responding, looking for a live free model..." >&2
-  for m in $(free_models); do
+  echo "note: '$MODEL' is not responding, looking for a live model..." >&2
+  for m in $(ordered_catalog); do
     [ "$m" = "$MODEL" ] && continue
     if model_alive "$m"; then
       echo "note: using '$m' instead" >&2
@@ -86,30 +182,47 @@ resolve_model() {
     fi
   done
 
-  echo "error: no free model is responding right now. Try again later." >&2
+  echo "error: no model is responding right now. Try again later." >&2
   exit 1
 }
 
 status() {
+  local probe="$MODEL"
+  if [ "$MODEL_EXPLICIT" = 0 ] && [ -z "${DEFAULT_ZEN_MODEL:-}" ]; then
+    probe="$(default_model)"
+  fi
   proxy_up && echo "proxy: UP (http://127.0.0.1:${PORT})" || echo "proxy: DOWN"
   echo ""
-  echo "Free models in the Zen catalog:"
-  free_models | sed 's/^/  - /' || echo "  (catalog fetch failed)"
+  case "$MODE" in
+    go)         echo "Go models (subscription):" ;;
+    openrouter) echo "OpenRouter free models:" ;;
+    *)          echo "Free models in the Zen catalog:" ;;
+  esac
+  catalog | sed 's/^/  - /' || echo "  (catalog fetch failed)"
   echo ""
-  printf "Probing '%s': " "$MODEL"
-  model_alive "$MODEL" && echo "responding" || echo "NOT responding"
+  printf "Probing '%s': " "$probe"
+  model_alive "$probe" && echo "responding" || echo "NOT responding"
 }
 
 while [ $# -gt 0 ]; do
   case "$1" in
     -m)       MODEL="$2"; MODEL_EXPLICIT=1; shift 2 ;;
     -m=*)     MODEL="${1#-m=}"; MODEL_EXPLICIT=1; shift ;;
+    --go)     MODE="go"; shift ;;
+    --zen)    MODE="zen"; shift ;;
+    --openrouter) MODE="openrouter"; shift ;;
     --status) status; exit 0 ;;
     -h|--help) usage; exit 0 ;;
     --)       shift; break ;;
     *)        break ;;
   esac
 done
+
+# Apply the provider-specific default model when nothing is pinned explicitly
+# or via env (e.g. Go and OpenRouter defaults differ from the Zen free default).
+if [ "$MODEL_EXPLICIT" = 0 ] && [ -z "${DEFAULT_ZEN_MODEL:-}" ]; then
+  MODEL="$(default_model)"
+fi
 
 [ -f "$DIR/.env" ] || { echo "error: $DIR/.env not found -- run install.sh" >&2; exit 1; }
 
