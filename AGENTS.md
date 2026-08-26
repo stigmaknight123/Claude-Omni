@@ -20,7 +20,8 @@ If the user wants to install or set up `claude-zen`, follow `PROMPT.md`:
 
 ## Hard rules
 
-- Never rewrite or "improve" `zen-proxy.mjs`. Its `reasoning_content` cache and
-  stub retry, and its `.filter((t) => t.name && t.input_schema)` tool filter,
-  are load-bearing and fail intermittently if touched.
+- `zen-proxy.mjs` has two load-bearing parts that must stay verbatim: the
+  `reasoning_content` cache/stub-retry and the
+  `.filter((t) => t.name && t.input_schema)` tool filter. Don't touch those;
+  other changes (e.g. the free-usage fallback) are fine.
 - Never commit, print, or log API keys. Keys live in `~/.zen-claude/.env`.
