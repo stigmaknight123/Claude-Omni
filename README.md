@@ -152,6 +152,24 @@ source ~/.zen-claude/claude-omni.bash
 (or add that line to `~/.bashrc`). Then `claude-omni <TAB>` completes the flags,
 and `claude-omni -m <TAB>` completes the model ids.
 
+## Configuration
+
+Everything is tunable via environment variables (defaults shown):
+
+| Variable                 | Default          | Purpose                                        |
+| ------------------------ | ---------------- | ---------------------------------------------- |
+| `ZEN_PROXY_PORT`         | `8787`           | Port the local proxy listens on                |
+| `ZEN_TIMEOUT_MS`         | `120000`         | Upstream response-header timeout (ms)          |
+| `ZEN_STREAM_IDLE_MS`     | `60000`          | Abort a stalled stream after this idle (ms)    |
+| `ZEN_STREAM_ATTEMPTS`    | `2`              | Stream attempts before giving up (swaps model) |
+| `ZEN_PREFERRED`          | *(per provider)* | Fallback priority order (space-separated ids)  |
+| `ZEN_BASE_URL`           | *(per provider)* | Override the upstream endpoint                 |
+| `DEFAULT_ZEN_MODEL`      | *(per provider)* | Default model when you don't pass `-m`         |
+| `CLAUDE_OMNI_NO_UPDATE`  | `0`              | Set to `1` to disable auto-update on launch    |
+
+Set them inline (`ZEN_PROXY_PORT=9000 claude-omni`) or export them in your shell
+profile.
+
 ---
 
 ## Why a proxy is needed
