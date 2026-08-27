@@ -366,15 +366,36 @@ async function relayStream(upstream, res, model) {
 }
 
 
-const send = (payload) =>
-  fetch(`${UPSTREAM}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-  })
+const UPSTREAM_TIMEOUT_MS = Number(process.env.ZEN_TIMEOUT_MS ?? 120000)
+const RETRY_DELAY_MS = 250
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+// Consume a response body so its socket is released back to the pool.
+const drain = async (resp) => {
+  try { await resp.text() } catch {}
+}
+
+// POST to the upstream. Times out only if the response *headers* don't arrive
+// in time, so long streaming generations aren't cut off. Throws on timeout or
+// network errors.
+const send = async (payload) => {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS)
+  try {
+    return await fetch(`${UPSTREAM}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    })
+  } finally {
+    clearTimeout(timer)
+  }
+}
 
 
 const fail = (res, status, detail) => {
@@ -399,24 +420,94 @@ const isFailover = (status, text) => {
 }
 
 
-// On a failover-worthy error, try each fallback model until one answers.
+// Send, swallowing connection errors/timeouts (returns null on failure).
+const trySend = async (payload) => {
+  try { return await send(payload) } catch { return null }
+}
+
+
+// Try each fallback model until one answers.
 const tryFallback = async (payload) => {
   for (const alt of FALLBACK) {
     if (alt === payload.model) continue
-    const up = await send({ ...payload, model: alt })
+    const up = await trySend({ ...payload, model: alt })
+    if (!up) continue
     if (up.ok) {
       console.error(`failover: ${payload.model} -> ${alt}`)
       return up
     }
+    await drain(up)
   }
   return null
 }
 
 
-// Fail over if the error qualifies and we have fallback models; else null.
-const failover = async (payload, status, detail) => {
-  if (!FALLBACK.length || !isFailover(status, detail)) return null
-  return tryFallback(payload)
+class UpstreamError extends Error {
+  constructor(status, detail) { super(detail); this.status = status }
+}
+
+
+// Retry the same model once (many failures are transient), then fall back to
+// another model. Throws the original error if nothing works.
+const retryThenFailover = async (payload, status, detail) => {
+  await sleep(RETRY_DELAY_MS)
+  const again = await trySend(payload)
+  if (again && again.ok) {
+    console.error(`retry ok: ${payload.model}`)
+    return again
+  }
+  if (again) await drain(again)
+  const alt = await tryFallback(payload)
+  if (alt) return alt
+  throw new UpstreamError(status, detail)
+}
+
+
+// Get a working upstream response for `payload`, applying retry + failover.
+const resolve = async (payload) => {
+  // initial attempt (retry once on connection errors/timeouts)
+  let up = await trySend(payload)
+  if (!up) {
+    console.error(`upstream connection error, retrying ${payload.model}`)
+    await sleep(RETRY_DELAY_MS)
+    up = await trySend(payload)
+  }
+
+  // reasoning_content replay: a 400 mentioning it gets stubs + a retry.
+  if (up && up.status === 400) {
+    const detail = await up.text()
+    if (detail.includes('reasoning_content')) {
+      const stubbed = fillReasoningStubs(payload)
+      demandsReasoning.add(payload.model)
+      console.error(
+        `upstream 400 (reasoning replay): retrying ${payload.model}` +
+        (stubbed ? ' with stubs' : ' (nothing to stub)'))
+      up = await trySend(payload)
+    } else if (isFailover(400, detail)) {
+      return retryThenFailover(payload, 400, detail)
+    } else {
+      throw new UpstreamError(400, detail)
+    }
+  }
+
+  // any other failure: retry the same model once, then fail over
+  if (up && !up.ok) {
+    const status = up.status
+    const detail = await up.text()
+    if (isFailover(status, detail)) {
+      return retryThenFailover(payload, status, detail)
+    }
+    throw new UpstreamError(status, detail)
+  }
+
+  // both transport-level attempts failed: try a different model
+  if (!up) {
+    const alt = await tryFallback(payload)
+    if (alt) return alt
+    throw new UpstreamError(502, 'upstream unreachable')
+  }
+
+  return up
 }
 
 
@@ -461,39 +552,12 @@ const server = http.createServer(async (req, res) => {
     if (DEBUG) console.error('->', JSON.stringify(payload).slice(0, 800))
 
 
-    let upstream = await send(payload)
-
-
-    // Only some of Zen's upstream channels enforce the reasoning replay rule,
-    // so a 400 mentioning reasoning_content gets stubs and a retry. Any other
-    // failure (including a non-reasoning 400) falls through to the failover
-    // logic below, which swaps to a live model if one is available.
-    if (upstream.status === 400) {
-      const detail = await upstream.text()
-      if (detail.includes('reasoning_content')) {
-        const stubbed = fillReasoningStubs(payload)
-        demandsReasoning.add(payload.model)
-        console.error(
-          `upstream 400 (reasoning replay): retrying ${payload.model}` +
-          (stubbed ? ' with stubs' : ' (nothing to stub)'))
-        upstream = await send(payload)
-      } else {
-        const alt = await failover(payload, 400, detail)
-        if (!alt) return fail(res, 400, detail)
-        upstream = alt
-      }
-    }
-
-
-    // Free-tier models hit their usage cap, and Zen's upstream channels go
-    // flaky (503/400/500). If the launcher supplied fallback models, silently
-    // switch to one that answers instead of surfacing the error to Claude Code.
-    if (!upstream.ok) {
-      const status = upstream.status
-      const detail = await upstream.text()
-      const alt = await failover(payload, status, detail)
-      if (!alt) return fail(res, status, detail)
-      upstream = alt
+    let upstream
+    try {
+      upstream = await resolve(payload)
+    } catch (err) {
+      if (err instanceof UpstreamError) return fail(res, err.status, err.message)
+      throw err
     }
 
 
