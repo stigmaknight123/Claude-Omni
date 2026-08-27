@@ -129,7 +129,7 @@ Pick the provider with a flag (default is Zen):
 claude-omni --go                                    # Go → deepseek-v4-flash
 claude-omni --openrouter                            # OpenRouter free models
 claude-omni --groq                                  # Groq → llama-3.3-70b-versatile
-claude-omni --gemini -m gemini-2.0-flash            # a specific Gemini model
+claude-omni --gemini -m gemini-3.6-flash            # a specific Gemini model
 claude-omni --zen                                   # back to Zen (default)
 ```
 

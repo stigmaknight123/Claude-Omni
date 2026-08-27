@@ -253,9 +253,9 @@ preferred() {
         'llama3.1-8b' ;;
     gemini)
       printf '%s\n' \
-        'gemini-2.0-flash' \
-        'gemini-2.0-flash-lite' \
-        'gemini-1.5-flash' ;;
+        'gemini-3.6-flash' \
+        'gemini-3.7-flash' \
+        'gemini-2.5-flash' ;;
     mistral)
       printf '%s\n' \
         'mistral-small-latest' \
@@ -307,7 +307,7 @@ providers = {
       "mixtral-8x7b-32768", "gemma2-9b-it"]),
   "cerebras": ("https://api.cerebras.ai/v1", "CEREBRAS_API_KEY", ["llama3.3-70b", "llama3.1-8b"]),
   "gemini": ("https://generativelanguage.googleapis.com/v1beta/openai", "GEMINI_API_KEY", [
-      "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash"]),
+      "gemini-3.6-flash", "gemini-3.7-flash", "gemini-2.5-flash"]),
   "mistral": ("https://api.mistral.ai/v1", "MISTRAL_API_KEY", [
       "mistral-small-latest", "open-mistral-nemo", "open-mistral-7b"]),
   "together": ("https://api.together.xyz/v1", "TOGETHER_API_KEY", [
