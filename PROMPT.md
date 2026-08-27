@@ -1,22 +1,27 @@
 # Installation prompt
 
 This is the prompt used to set `claude-omni` up on a fresh machine with an AI
-coding assistant. Paste it into your assistant of choice, swap in your own key,
-and it will walk through clone → install → verify → launch.
+coding assistant. Paste it into your assistant of choice, swap in your provider
+and key, and it will walk through clone → install → verify → launch.
 
 ```text
-Set up Claude Code on this machine to run DeepSeek V4 Flash for free through
-OpenCode Zen.
+Set up Claude Code to run through claude-omni using the provider of my choice.
 
 Repo:  https://github.com/stigmaknight123/Claude-Omni
 
-My OpenCode Zen API key:  sk-<your-zen-api-key>
+Provider: <zen | go | openrouter | groq | cerebras | gemini | mistral | together | nvidia | huggingface>
+My API key: <the key for that provider>
 
 Steps:
 1. Clone the repo somewhere sensible and read its README first.
-2. Run ./install.sh and give it my key when it asks.
-3. Run ./verify.sh --full and paste me the full output.
-4. Tell me the exact command to start it.
+2. Run ./install.sh (if I'm using Zen/Go, give it the Zen key when it asks).
+3. Put my provider key in ~/.zen-claude/.env under the right variable name:
+   zen/go -> ZEN_API_KEY, openrouter -> OPENROUTER_API_KEY,
+   groq -> GROQ_API_KEY, cerebras -> CEREBRAS_API_KEY, gemini -> GEMINI_API_KEY,
+   mistral -> MISTRAL_API_KEY, together -> TOGETHER_API_KEY,
+   nvidia -> NVIDIA_API_KEY, huggingface -> HF_TOKEN.
+4. Run ./verify.sh --full and paste me the full output.
+5. Tell me the exact command to start it (claude-omni --<provider>).
 
 Rules:
 - Do NOT rewrite or "improve" zen-proxy.mjs. The repo copy is correct. Two
@@ -28,8 +33,8 @@ Rules:
 - Do not tell me it works until verify.sh passes end to end.
 ```
 
-> Never commit a real key. The `sk-<your-zen-api-key>` placeholder keeps this
-> file safe to share in a public repo.
+> Never commit a real key. The `<your-key>` placeholder keeps this file safe to
+> share in a public repo.
 
 ## Optional: open in VS Code
 

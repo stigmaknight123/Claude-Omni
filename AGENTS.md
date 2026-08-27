@@ -13,11 +13,15 @@ Anthropic protocol Claude Code speaks. See `README.md` for details.
 
 If the user wants to install or set up `claude-omni`, follow `PROMPT.md`:
 
-1. Ask the user for their OpenCode Zen API key — never read it from the repo,
-   the environment, or anywhere else; it is a secret the user must provide.
-2. Run `./install.sh` and pass the key when it asks.
-3. Run `./verify.sh --full` and show the user the full output.
-4. Tell the user the launch command: `claude-omni`.
+1. Ask the user which provider they want to use, then ask for that provider's
+   API key — never read it from the repo, the environment, or anywhere else.
+2. Run `./install.sh` (pass the Zen key if they use Zen/Go).
+3. Add their provider key to `~/.zen-claude/.env` under the right name
+   (`ZEN_API_KEY`, `OPENROUTER_API_KEY`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`,
+   `GEMINI_API_KEY`, `MISTRAL_API_KEY`, `TOGETHER_API_KEY`, `NVIDIA_API_KEY`,
+   `HF_TOKEN`).
+4. Run `./verify.sh --full` and show the user the full output.
+5. Tell the user the launch command: `claude-omni --<provider>`.
 
 ## Hard rules
 
