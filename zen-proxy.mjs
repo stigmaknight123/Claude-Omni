@@ -243,8 +243,10 @@ const sse = (res, event, data) =>
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
 
 
-/** Pipe an OpenAI SSE stream out as an Anthropic SSE stream. */
-async function relayStream(upstream, res, model) {
+/** Pipe an OpenAI SSE stream out as an Anthropic SSE stream. If the upstream
+ *  stalls or errors before any content is emitted, retry via `reResolve` (which
+ *  can swap to a different model); once content has started it just ends cleanly. */
+async function relayStream(upstream, res, model, reResolve) {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
@@ -265,12 +267,14 @@ async function relayStream(upstream, res, model) {
 
   let index = -1          // current Anthropic content block index
   let textOpen = false
+  let contentStarted = false
   const tools = new Map() // OpenAI tool_call index -> Anthropic block index
   const callIds = []      // tool_call ids seen, for the reasoning cache
   let reasoning = ''
   let replyText = ''      // reply text, the cache key for a tool-less turn
   let finish = 'stop'
   let usage = null
+  let current = upstream
 
 
   const closeBlock = () => {
@@ -278,91 +282,155 @@ async function relayStream(upstream, res, model) {
   }
 
 
-  const decoder = new TextDecoder()
-  let buf = ''
-
-
-  for await (const chunk of upstream.body) {
-    buf += decoder.decode(chunk, { stream: true })
-    const lines = buf.split('\n')
-    buf = lines.pop() ?? ''
-
-
-    for (const line of lines) {
-      if (!line.startsWith('data:')) continue
-      const payload = line.slice(5).trim()
-      if (!payload || payload === '[DONE]') continue
-
-
-      let ev
-      try { ev = JSON.parse(payload) } catch { continue }
-      if (ev.usage) usage = ev.usage
-
-
-      const choice = ev.choices?.[0]
-      if (!choice) continue
-      if (choice.finish_reason) finish = choice.finish_reason
-      const delta = choice.delta ?? {}
-      if (delta.reasoning_content) reasoning += delta.reasoning_content
-
-
-      if (delta.content) {
-        replyText += delta.content
-        if (!textOpen) {
-          closeBlock()
-          index++
-          textOpen = true
-          sse(res, 'content_block_start', {
-            type: 'content_block_start', index,
-            content_block: { type: 'text', text: '' },
-          })
-        }
-        sse(res, 'content_block_delta', {
-          type: 'content_block_delta', index,
-          delta: { type: 'text_delta', text: delta.content },
-        })
-      }
-
-
-      for (const call of delta.tool_calls ?? []) {
-        const key = call.index ?? 0
-        if (!tools.has(key)) {
-          closeBlock()
-          textOpen = false
-          index++
-          tools.set(key, index)
-          const id = call.id ?? `call_${key}`
-          callIds.push({ id })
-          sse(res, 'content_block_start', {
-            type: 'content_block_start', index,
-            content_block: {
-              type: 'tool_use',
-              id,
-              name: call.function?.name ?? '',
-              input: {},
-            },
-          })
-        }
-        if (call.function?.arguments) {
-          sse(res, 'content_block_delta', {
-            type: 'content_block_delta', index: tools.get(key),
-            delta: { type: 'input_json_delta', partial_json: call.function.arguments },
-          })
-        }
-      }
-    }
+  // End the stream exactly once, sending message_stop so Claude Code doesn't
+  // hang when the upstream stalls or errors mid-stream.
+  const STREAM_IDLE_MS = Number(process.env.ZEN_STREAM_IDLE_MS ?? 60000)
+  const MAX_ATTEMPTS = Number(process.env.ZEN_STREAM_ATTEMPTS ?? 2)
+  let done = false
+  let idle = null
+  const endStream = () => {
+    if (done) return
+    done = true
+    clearTimeout(idle)
+    try {
+      const b = current?.body
+      if (b && b.cancel) b.cancel().catch(() => {})
+      else if (b && b.destroy) b.destroy()
+    } catch {}
+    closeBlock()
+    rememberReasoning(callIds, replyText, reasoning)
+    sse(res, 'message_delta', {
+      type: 'message_delta',
+      delta: { stop_reason: STOP[finish] ?? 'end_turn', stop_sequence: null },
+      usage: { output_tokens: usage?.completion_tokens ?? 0 },
+    })
+    sse(res, 'message_stop', { type: 'message_stop' })
+    res.end()
   }
 
+  const armIdle = () => {
+    clearTimeout(idle)
+    idle = setTimeout(() => {
+      console.error(`upstream stream stalled (${STREAM_IDLE_MS}ms), closing`)
+      endStream()
+    }, STREAM_IDLE_MS)
+  }
 
-  closeBlock()
-  rememberReasoning(callIds, replyText, reasoning)
-  sse(res, 'message_delta', {
-    type: 'message_delta',
-    delta: { stop_reason: STOP[finish] ?? 'end_turn', stop_sequence: null },
-    usage: { output_tokens: usage?.completion_tokens ?? 0 },
-  })
-  sse(res, 'message_stop', { type: 'message_stop' })
-  res.end()
+  let decoder = new TextDecoder()
+  let buf = ''
+  let attempts = 0
+
+
+  while (!done && attempts < MAX_ATTEMPTS) {
+    attempts++
+    armIdle()
+
+    let completed = false
+    try {
+      for await (const chunk of current.body) {
+        if (done) break
+        armIdle()
+
+        buf += decoder.decode(chunk, { stream: true })
+        const lines = buf.split('\n')
+        buf = lines.pop() ?? ''
+
+
+        for (const line of lines) {
+          if (!line.startsWith('data:')) continue
+          const payload = line.slice(5).trim()
+          if (!payload || payload === '[DONE]') continue
+
+
+          let ev
+          try { ev = JSON.parse(payload) } catch { continue }
+          if (ev.usage) usage = ev.usage
+
+
+          const choice = ev.choices?.[0]
+          if (!choice) continue
+          if (choice.finish_reason) finish = choice.finish_reason
+          const delta = choice.delta ?? {}
+          if (delta.reasoning_content) reasoning += delta.reasoning_content
+
+
+          if (delta.content) {
+            replyText += delta.content
+            if (!textOpen) {
+              closeBlock()
+              index++
+              textOpen = true
+              contentStarted = true
+              sse(res, 'content_block_start', {
+                type: 'content_block_start', index,
+                content_block: { type: 'text', text: '' },
+              })
+            }
+            sse(res, 'content_block_delta', {
+              type: 'content_block_delta', index,
+              delta: { type: 'text_delta', text: delta.content },
+            })
+          }
+
+
+          for (const call of delta.tool_calls ?? []) {
+            const key = call.index ?? 0
+            if (!tools.has(key)) {
+              closeBlock()
+              textOpen = false
+              index++
+              contentStarted = true
+              tools.set(key, index)
+              const id = call.id ?? `call_${key}`
+              callIds.push({ id })
+              sse(res, 'content_block_start', {
+                type: 'content_block_start', index,
+                content_block: {
+                  type: 'tool_use',
+                  id,
+                  name: call.function?.name ?? '',
+                  input: {},
+                },
+              })
+            }
+            if (call.function?.arguments) {
+              sse(res, 'content_block_delta', {
+                type: 'content_block_delta', index: tools.get(key),
+                delta: { type: 'input_json_delta', partial_json: call.function.arguments },
+              })
+            }
+          }
+        }
+      }
+      completed = true
+    } catch (err) {
+      console.error(`upstream stream error: ${err.message ?? err}`)
+    }
+
+    if (done || completed || contentStarted) break
+
+    // stream died before any content: swap to a (possibly different) model
+    if (reResolve) {
+      let next = null
+      try { next = await reResolve() } catch (err) {
+        if (!(err instanceof UpstreamError)) console.error(`re-resolve error: ${err.message ?? err}`)
+      }
+      if (next) {
+        console.error('stream stalled before content, swapping model')
+        current = next
+        decoder = new TextDecoder()
+        buf = ''
+        reasoning = ''
+        usage = null
+        finish = 'stop'
+        continue
+      }
+    }
+
+    break
+  }
+
+  endStream()
 }
 
 
@@ -561,7 +629,7 @@ const server = http.createServer(async (req, res) => {
     }
 
 
-    if (payload.stream) return await relayStream(upstream, res, body.model)
+    if (payload.stream) return await relayStream(upstream, res, body.model, () => resolve(payload))
 
 
     const json = await upstream.json()
