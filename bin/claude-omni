@@ -157,7 +157,7 @@ start_proxy() {
   fi
   [ -f "$START" ] || { echo "error: $START not found -- run install.sh" >&2; exit 1; }
   printf '%s\n' "$base" > "$MARK"
-  ZEN_API_KEY="$(key)" ZEN_BASE_URL="$base" ZEN_FALLBACK_MODELS="$(ordered_catalog 2>/dev/null | tr '\n' ' ')" nohup "$START" >>"$LOG" 2>&1 &
+  ZEN_FAILOVER="$(build_failovers 2>/dev/null || true)" ZEN_API_KEY="$(key)" ZEN_BASE_URL="$base" ZEN_FALLBACK_MODELS="$(ordered_catalog 2>/dev/null | tr '\n' ' ')" nohup "$START" >>"$LOG" 2>&1 &
   for _ in $(seq 1 40); do
     proxy_up && { echo "zen-proxy up (http://127.0.0.1:${PORT})"; return; }
     sleep 0.5
@@ -277,6 +277,58 @@ preferred() {
         'meta-llama/Llama-3.3-70B-Instruct' \
         'deepseek-ai/DeepSeek-R1' ;;
   esac
+}
+
+# Build a JSON spec of alternate providers that have a key configured, each
+# with its own endpoint, key, and a preferred model. Lets the proxy fall back
+# to a different provider when the current one's channel goes down.
+build_failovers() {
+  python3 - "$DIR/.env" "$MODE" <<'PY'
+import json, sys
+env = {}
+for line in open(sys.argv[1]):
+    line = line.strip()
+    if '=' in line and not line.startswith('#'):
+        k, v = line.split('=', 1)
+        env[k] = v
+cur = sys.argv[2]
+providers = {
+  "openrouter": ("https://openrouter.ai/api/v1", "OPENROUTER_API_KEY", [
+      "nvidia/nemotron-3-ultra-550b-a55b:free",
+      "nvidia/nemotron-3-super-120b-a12b:free",
+      "google/gemma-4-31b-it:free",
+      "google/gemma-4-26b-a4b-it:free",
+      "z-ai/glm-5.2:free",
+      "minimax/minimax-m3:free",
+      "minimax/minimax-m2.7:free",
+      "cohere/north-mini-code:free"]),
+  "groq": ("https://api.groq.com/openai/v1", "GROQ_API_KEY", [
+      "llama-3.3-70b-versatile", "llama-3.1-8b-instant",
+      "mixtral-8x7b-32768", "gemma2-9b-it"]),
+  "cerebras": ("https://api.cerebras.ai/v1", "CEREBRAS_API_KEY", ["llama3.3-70b", "llama3.1-8b"]),
+  "gemini": ("https://generativelanguage.googleapis.com/v1beta/openai", "GEMINI_API_KEY", [
+      "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash"]),
+  "mistral": ("https://api.mistral.ai/v1", "MISTRAL_API_KEY", [
+      "mistral-small-latest", "open-mistral-nemo", "open-mistral-7b"]),
+  "together": ("https://api.together.xyz/v1", "TOGETHER_API_KEY", [
+      "meta-llama/Llama-3.3-70B-Instruct-Turbo", "deepseek-ai/DeepSeek-R1",
+      "mistralai/Mixtral-8x7B-Instruct-v0.1"]),
+  "nvidia": ("https://integrate.api.nvidia.com/v1", "NVIDIA_API_KEY", [
+      "meta/llama-3.3-70b-instruct", "deepseek-ai/deepseek-r1",
+      "mistralai/mistral-7b-instruct-v0.3"]),
+  "huggingface": ("https://router.huggingface.co/v1", "HF_TOKEN", [
+      "Qwen/Qwen2.5-Coder-32B-Instruct", "meta-llama/Llama-3.3-70B-Instruct",
+      "deepseek-ai/DeepSeek-R1"]),
+}
+out = []
+for name, (url, keyvar, models) in providers.items():
+    if name == cur:
+        continue
+    k = env.get(keyvar, '')
+    if k:
+        out.append({"url": url, "key": k, "models": models})
+print(json.dumps(out))
+PY
 }
 
 in_list() {

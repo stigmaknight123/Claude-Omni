@@ -449,17 +449,17 @@ const drain = async (resp) => {
   try { await resp.text() } catch {}
 }
 
-// POST to the upstream. Times out only if the response *headers* don't arrive
-// in time, so long streaming generations aren't cut off. Throws on timeout or
-// network errors.
-const send = async (payload) => {
+// POST to a target upstream. Times out only if the response *headers* don't
+// arrive in time, so long streaming generations aren't cut off. Throws on
+// timeout or network errors.
+const sendTo = async (url, key, payload) => {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS)
   try {
-    return await fetch(`${UPSTREAM}/chat/completions`, {
+    return await fetch(`${url}/chat/completions`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${API_KEY}`,
+        Authorization: `Bearer ${key}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(payload),
@@ -469,6 +469,10 @@ const send = async (payload) => {
     clearTimeout(timer)
   }
 }
+
+
+// POST to the primary (configured) upstream.
+const send = (payload) => sendTo(UPSTREAM, API_KEY, payload)
 
 
 const fail = (res, status, detail) => {
@@ -499,7 +503,19 @@ const trySend = async (payload) => {
 }
 
 
-// Try each fallback model until one answers.
+// Cross-provider alternates, each with its own endpoint, key, and model id.
+// Built by the launcher (JSON) so a down provider can fall back to another.
+const FAILOVER = (() => {
+  try { return JSON.parse(process.env.ZEN_FAILOVER ?? '[]') } catch { return [] }
+})()
+
+
+const trySendAlt = async (alt, payload) => {
+  try { return await sendTo(alt.url, alt.key, payload) } catch { return null }
+}
+
+
+// Try each same-provider fallback model, then any cross-provider alternates.
 const tryFallback = async (payload) => {
   for (const alt of FALLBACK) {
     if (alt === payload.model) continue
@@ -510,6 +526,17 @@ const tryFallback = async (payload) => {
       return up
     }
     await drain(up)
+  }
+  for (const alt of FAILOVER) {
+    for (const m of alt.models ?? []) {
+      const up = await trySendAlt(alt, { ...payload, model: m })
+      if (!up) continue
+      if (up.ok) {
+        console.error(`cross-provider failover: ${payload.model} -> ${m}`)
+        return up
+      }
+      await drain(up)
+    }
   }
   return null
 }
