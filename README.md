@@ -5,6 +5,18 @@ OpenRouter, Groq, Cerebras, Gemini, Mistral, Together, NVIDIA, and Hugging Face 
 through a small local proxy that translates their API into the Anthropic protocol
 Claude Code speaks. Defaults to Zen's free `deepseek-v4-flash-free` ($0).
 
+## Easy setup
+
+The quickest path — no terminal needed, using OpenCode Desktop:
+
+1. Download **OpenCode Desktop** from [opencode.ai/download](https://opencode.ai/download).
+2. Get a free **Zen API key** at [opencode.ai/zen](https://opencode.ai/zen) — you can log in with Google.
+3. Open OpenCode Desktop, click the block icon in the top-left, go to **Settings → Provider**, and paste your API key.
+4. Start a project, pick a free model, and tell the agent: *"set up claude-omni"* — paste `https://github.com/stigmaknight123/Claude-Omni`.
+5. Optional: ask the agent to *"open claude-omni in a VS Code window"* so you can see where everything lives.
+
+Prefer the terminal? See [Install](#install) below.
+
 ## Why use it
 
 - **$0 to run.** Point Claude Code at free models — DeepSeek V4 Flash and others —
