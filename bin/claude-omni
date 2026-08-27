@@ -15,7 +15,7 @@ START="$DIR/start.sh"
 LOG="$DIR/proxy.log"
 MARK="$DIR/.zen-base-url"
 STATE="$DIR/.state"
-VERSION="1.3.0"
+VERSION="1.4.0"
 MODE_EXPLICIT=0
 FROM_STATE=0
 

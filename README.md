@@ -26,8 +26,9 @@ Prefer the terminal? See [Install](#install) below.
 - **Ten providers, one command.** Switch between OpenCode Zen/Go, OpenRouter,
   Groq, Cerebras, Gemini, Mistral, Together, NVIDIA, and Hugging Face with a flag.
 - **Self-healing.** If a model is down, rate-limited, or its upstream channel
-  errors, `claude-omni` falls back to a live one at launch *and* auto-swaps
-  mid-session.
+  errors, `claude-omni` falls back to a live one at launch, auto-swaps
+  mid-session, and — if a whole provider is down — fails over to another
+  provider (e.g. OpenRouter) using any keys you've added to `.env`.
 
 ## Install
 
