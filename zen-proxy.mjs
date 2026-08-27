@@ -14,6 +14,11 @@ import http from 'node:http'
 import { createHash } from 'node:crypto'
 
 
+// Prefix every log line with an ISO timestamp so the proxy log is greppable.
+const _error = console.error
+console.error = (...a) => _error(new Date().toISOString(), ...a)
+
+
 const UPSTREAM = process.env.ZEN_BASE_URL ?? 'https://opencode.ai/zen/v1'
 const API_KEY = process.env.ZEN_API_KEY
 const PORT = Number(process.env.PORT ?? 8787)
@@ -661,3 +666,14 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, '127.0.0.1', () =>
   console.error(`zen-proxy -> ${UPSTREAM}  listening on http://127.0.0.1:${PORT}`))
+
+
+// Graceful shutdown: close the server, let in-flight requests finish, and exit
+// (with a force-exit fallback in case a stream hangs).
+const shutdown = () => {
+  console.error('shutting down')
+  server.close(() => process.exit(0))
+  setTimeout(() => process.exit(1), 3000).unref()
+}
+process.on('SIGINT', shutdown)
+process.on('SIGTERM', shutdown)
