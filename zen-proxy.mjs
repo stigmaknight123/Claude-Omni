@@ -579,10 +579,21 @@ const resolve = async (payload) => {
 }
 
 
+const MAX_BODY_BYTES = 20 * 1024 * 1024
+
 const readBody = (req) =>
   new Promise((resolve, reject) => {
     let d = ''
-    req.on('data', (c) => (d += c))
+    let size = 0
+    req.on('data', (c) => {
+      size += c.length
+      if (size > MAX_BODY_BYTES) {
+        reject(new Error('request body too large'))
+        req.destroy()
+        return
+      }
+      d += c
+    })
     req.on('end', () => resolve(d))
     req.on('error', reject)
   })
@@ -599,11 +610,16 @@ const server = http.createServer(async (req, res) => {
 
 
   // Claude Code pings this before streaming; a rough estimate is fine.
+  // Guarded so a malformed/disconnected request can't crash the process.
   if (url.pathname.endsWith('/count_tokens')) {
-    const body = JSON.parse((await readBody(req)) || '{}')
-    const chars = JSON.stringify(body.messages ?? []).length + JSON.stringify(body.system ?? '').length
+    let estimate = 0
+    try {
+      const body = JSON.parse((await readBody(req)) || '{}')
+      const chars = JSON.stringify(body.messages ?? []).length + JSON.stringify(body.system ?? '').length
+      estimate = Math.ceil(chars / 4)
+    } catch {}
     res.writeHead(200, { 'Content-Type': 'application/json' })
-    return res.end(JSON.stringify({ input_tokens: Math.ceil(chars / 4) }))
+    return res.end(JSON.stringify({ input_tokens: estimate }))
   }
 
 
