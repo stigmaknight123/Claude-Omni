@@ -29,8 +29,7 @@ claude-omni            # start coding
 That's it — the proxy auto-starts if it isn't running.
 
 Get a Zen key at [opencode.ai](https://opencode.ai) (looks like `sk-` plus 61
-characters). For `--openrouter` you'll also need a key from
-[openrouter.ai](https://openrouter.ai) — see [API keys](#api-keys).
+characters). The other providers need their own keys — see [API keys](#api-keys).
 
 ### API keys
 
@@ -58,11 +57,12 @@ upstream endpoint if you ever need a custom relay.
 The simplest way: point an AI coding agent (Claude Code, OpenCode, Codex,
 Copilot, …) at this repo and ask it to set up `claude-omni`. It reads
 [`AGENTS.md`](AGENTS.md) (or [`CLAUDE.md`](CLAUDE.md)) automatically, so it knows
-to run `install.sh` and `verify.sh --full` — you just supply your Zen key when it
-asks.
+to run `install.sh` and `verify.sh --full` — it'll ask which provider you want and
+collect that provider's API key.
 
 Prefer to drive it yourself? [`PROMPT.md`](PROMPT.md) holds a ready-to-paste
-prompt: copy the block, swap in your key, and paste it into any assistant.
+prompt: copy the block, swap in your provider and key, and paste it into any
+assistant.
 
 ## Requirements
 
