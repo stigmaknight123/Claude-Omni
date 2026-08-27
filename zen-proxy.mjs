@@ -18,8 +18,9 @@ const UPSTREAM = process.env.ZEN_BASE_URL ?? 'https://opencode.ai/zen/v1'
 const API_KEY = process.env.ZEN_API_KEY
 const PORT = Number(process.env.PORT ?? 8787)
 const DEBUG = process.env.ZEN_DEBUG === '1'
-// Models to try, in order, when the primary hits its free-usage limit. Set by
-// the launcher (space-separated); empty means "no fallback, pass the error up".
+// Models to try, in order, when the primary fails (free-usage limit or an
+// upstream error). Set by the launcher (space-separated); empty means "no
+// fallback, pass the error up".
 const FALLBACK = (process.env.ZEN_FALLBACK_MODELS ?? '').split(/[\s,]+/).filter(Boolean)
 
 
@@ -386,21 +387,36 @@ const fail = (res, status, detail) => {
 }
 
 
-const isUsageLimit = (status, text) =>
-  status === 429 || /FreeUsageLimitError|rate limit|free usage/i.test(text ?? '')
+// Should we fail over to a fallback model? True for free-usage/rate limits AND
+// upstream provider failures (flaky channels) -- but not genuine request
+// errors, which will just repeat on any model.
+const isFailover = (status, text) => {
+  const t = text ?? ''
+  if (status === 429 || /FreeUsageLimitError|rate limit|free usage/i.test(t)) return true
+  if (/server_error|upstream request failed|endpoint is unavailable|provider returned error|internal server error/i.test(t)) return true
+  if (status === 500 || status === 502 || status === 503 || status === 504) return true
+  return false
+}
 
 
-// On a free-usage error, try each fallback model until one answers.
+// On a failover-worthy error, try each fallback model until one answers.
 const tryFallback = async (payload) => {
   for (const alt of FALLBACK) {
     if (alt === payload.model) continue
     const up = await send({ ...payload, model: alt })
     if (up.ok) {
-      console.error(`free-usage fallback: ${payload.model} -> ${alt}`)
+      console.error(`failover: ${payload.model} -> ${alt}`)
       return up
     }
   }
   return null
+}
+
+
+// Fail over if the error qualifies and we have fallback models; else null.
+const failover = async (payload, status, detail) => {
+  if (!FALLBACK.length || !isFailover(status, detail)) return null
+  return tryFallback(payload)
 }
 
 
@@ -448,35 +464,36 @@ const server = http.createServer(async (req, res) => {
     let upstream = await send(payload)
 
 
-    // Only some of Zen's upstream channels enforce the replay rule, so this
-    // fires intermittently on identical traffic -- and always after a restart,
-    // when the cache is cold and no turn can be given its real reasoning back.
-    // Stub whatever is missing and retry; the retry also re-rolls the channel.
+    // Only some of Zen's upstream channels enforce the reasoning replay rule,
+    // so a 400 mentioning reasoning_content gets stubs and a retry. Any other
+    // failure (including a non-reasoning 400) falls through to the failover
+    // logic below, which swaps to a live model if one is available.
     if (upstream.status === 400) {
       const detail = await upstream.text()
-      if (!detail.includes('reasoning_content')) return fail(res, 400, detail)
-      const stubbed = fillReasoningStubs(payload)
-      demandsReasoning.add(payload.model)
-      console.error(
-        `upstream 400 (reasoning replay): retrying ${payload.model}` +
-        (stubbed ? ' with stubs' : ' (nothing to stub)'))
-      upstream = await send(payload)
+      if (detail.includes('reasoning_content')) {
+        const stubbed = fillReasoningStubs(payload)
+        demandsReasoning.add(payload.model)
+        console.error(
+          `upstream 400 (reasoning replay): retrying ${payload.model}` +
+          (stubbed ? ' with stubs' : ' (nothing to stub)'))
+        upstream = await send(payload)
+      } else {
+        const alt = await failover(payload, 400, detail)
+        if (!alt) return fail(res, 400, detail)
+        upstream = alt
+      }
     }
 
 
-    // Free-tier models hit their usage cap with a 429 / FreeUsageLimitError.
-    // If the launcher supplied fallback models, silently switch to one that
-    // answers instead of surfacing the error to Claude Code.
+    // Free-tier models hit their usage cap, and Zen's upstream channels go
+    // flaky (503/400/500). If the launcher supplied fallback models, silently
+    // switch to one that answers instead of surfacing the error to Claude Code.
     if (!upstream.ok) {
       const status = upstream.status
       const detail = await upstream.text()
-      if (FALLBACK.length && isUsageLimit(status, detail)) {
-        const alt = await tryFallback(payload)
-        if (!alt) return fail(res, status, detail)
-        upstream = alt
-      } else {
-        return fail(res, status, detail)
-      }
+      const alt = await failover(payload, status, detail)
+      if (!alt) return fail(res, status, detail)
+      upstream = alt
     }
 
 

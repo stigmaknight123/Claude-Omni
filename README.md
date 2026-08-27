@@ -13,8 +13,9 @@ Claude Code speaks. Defaults to Zen's free `deepseek-v4-flash-free` ($0).
   agentic loop all work unchanged; only the model behind it changes.
 - **Ten providers, one command.** Switch between OpenCode Zen/Go, OpenRouter,
   Groq, Cerebras, Gemini, Mistral, Together, NVIDIA, and Hugging Face with a flag.
-- **Self-healing.** If a model is down or rate-limited, `claude-omni` falls back
-  to a live one at launch *and* auto-swaps mid-session when free usage runs out.
+- **Self-healing.** If a model is down, rate-limited, or its upstream channel
+  errors, `claude-omni` falls back to a live one at launch *and* auto-swaps
+  mid-session.
 
 ## Install
 
